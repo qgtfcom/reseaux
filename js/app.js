@@ -3,10 +3,11 @@ import * as S from './sync.js';
 import * as FS from './fs.js';
 import * as IA from './ia.js';
 import * as Arch from './archive.js';
+import * as Media from './media.js';
 import { createEcrans } from './ecrans.js';
 import { NETS, JOURS, STATUTS, ROLES_DOSSIER, POLICES, normalizeSociete, newSocieteId, ensureParametres, importerAncienneAppli, uid } from './model.js';
 
-const VERSION = '1.1.0 (séance 2)';
+const VERSION = '1.2.0 (séance 3)';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -218,6 +219,7 @@ function viewAide() {
   <li><b>Hors connexion</b> : tu peux consulter et modifier. Tout est envoyé automatiquement au retour du réseau (compteur « en attente » en haut).</li>
   <li><b>Installer sur PC / téléphone</b> : dans Chrome ou Edge, menu ⋮ puis « Installer Pilote Réseaux » (sur iPhone : Partager puis « Sur l'écran d'accueil »).</li>
   <li><b>Dossiers</b> : seulement sur ordinateur (Chrome ou Edge). Le choix du dossier est à refaire une fois sur chaque ordinateur ; ensuite il est mémorisé.</li>
+  <li><b>Médias</b> : les fichiers restent dans les dossiers d'enregistrement du PC. Nomme-les « Société - AAAA-MM-JJ - Titre du post - Réseau » (ex. « … - TikTok.mp4 », « … - Instagram carrousel 2.jpg », « … - Story 1.jpg ») : dans À valider, « Rattacher automatiquement » les retrouve. Le téléphone ne voit que la miniature.</li>
   <li><b>Archives</b> : le 1er de chaque mois, le logiciel propose « Archiver … ? » sur ordinateur : un ZIP par société est rangé dans le dossier Archives (G: et/ou P:), puis les posts publiés sont retirés de l'application.</li>
   <li><b>Droits</b> : administrateur (tout), modification, lecture seule ; chaque personne peut être limitée à certaines sociétés (écran Accès).</li></ul></section>
   <section class="card"><h2>Ollama (IA locale, optionnelle)</h2><p>Installe Ollama (ollama.com), puis dans une invite de commandes : <code>ollama pull llama3.1</code>. Pour autoriser le logiciel, définis la variable d'environnement <code>OLLAMA_ORIGINS</code> avec l'adresse de ton logiciel, puis relance Ollama. Voir le guide d'installation.</p></section>
@@ -248,6 +250,7 @@ function render() {
   const root = $('#app');
   const needLogin = !S.cfg.ready || (!S.tokenValid() && !S.savedEmail());
   root.innerHTML = needLogin ? gate() : shell(view());
+  if (!needLogin) Media.hydrater(root, app).catch(e => console.warn('Médias', e));
   if (S.cfg.ready) { const b = $('#gbtn') || $('#gbtn-inline'); if (b && navigator.onLine) S.renderButton(b).catch(() => {}); }
   if (app.route === 'acces' && isAdmin() && !app.acces && !app._loadingAcces) { app._loadingAcces = true; loadAcces().finally(() => app._loadingAcces = false); }
 }
@@ -342,6 +345,7 @@ async function migrerSeance2() {
   try {
     if (!canEdit()) return;
     let change = (await Arch.ensureArchiveDossiers(app)) > 0;
+    if (await Media.ensureDossiersLocaux(app)) change = true;
     if (isAdmin() && Number(app.params.retentionJours) < 365) { await DB.saveDoc('parametres', 'app', { ...app.params, retentionJours: 365 }); change = true; }
     if (change) { await S.refreshPending(); await loadAll(); render(); S.sync().then(refresh); }
   } catch (e) { console.warn('Migration séance 2', e); }

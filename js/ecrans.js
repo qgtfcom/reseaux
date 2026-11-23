@@ -3,6 +3,8 @@ import * as DB from './db.js';
 import * as IA from './ia.js';
 import { NETS, STATUTS, JOURS, uid } from './model.js';
 import { iso, addDays, monday, eventsIn } from './events.js';
+import * as FS from './fs.js';
+import * as M from './media.js';
 
 const urlOk = u => typeof u === 'string' && /^(https?:|data:|blob:)/i.test(u);
 const QUICK = ['Plus court', 'Plus percutant', 'Plus pro', 'Ajouter la promo', "Moins d'emojis"];
@@ -32,7 +34,15 @@ export function createEcrans(c) {
   }
 
   /* ============================== À VALIDER ============================== */
+  const aMedia = p => !!(p.media?.fichiers?.length);
+  function mediaLocal(p) {
+    const m = p.media, f = m.fichiers, kind = m.kind || 'image', s = f.filter(x => x.role === 'story'), sl = f.filter(x => x.role === 'slide'), vi = f.filter(x => x.type === 'video');
+    const cible = kind === 'video' ? [(vi[0] || f[0]).nom] : kind === 'carousel' ? sl.map(x => x.nom) : [(f.find(x => x.type === 'image' && x.role === 'principal') || f[0]).nom];
+    const info = [vi.length ? (vi.length > 1 ? vi.length + ' vidéos' : '1 vidéo') : '', sl.length ? sl.length + ' images de carrousel' : '', s.length ? s.length + ' Stories' : ''].filter(Boolean).join(' · ');
+    return `<div class="media" data-lm="${esc(JSON.stringify({ s: p.entrepriseId, k: kind, n: cible }))}">${urlOk(m.poster) ? `<img src="${esc(m.poster)}" alt="${esc(p.titre)}">` : '<div class="wait"><strong>Aperçu indisponible</strong></div>'}</div><div class="carnote">${esc(info)} · fichiers sur le PC</div>`;
+  }
   function media(p) {
+    if (aMedia(p)) return mediaLocal(p);
     const m = p.media || {}, slides = (m.slides || []).filter(urlOk), u = [m.url, slides[0]].find(urlOk);
     if (m.kind === 'carousel' && slides.length > 1) return `<div class="media car">${slides.map((s, i) => `<img src="${esc(s)}" alt="${esc(p.titre)} – image ${i + 1}" loading="lazy">`).join('')}</div><div class="carnote">${slides.length} images · fais glisser</div>`;
     if (!u) return `<div class="media"><div class="wait"><strong>Média à produire</strong><span>${esc(p.visuel || '')}</span></div></div>`;
@@ -52,11 +62,12 @@ export function createEcrans(c) {
       ? `<div class="actions"><button class="btn big ok" data-act="av-valider" data-id="${id}">✓ Valider</button><button class="btn ghost" data-act="av-edit" data-id="${id}">✎ Modifier / refaire</button></div>`
       : p.statut === 'pret' ? `<div class="actions"><button class="btn ghost" data-act="av-annuler" data-id="${id}">Annuler la validation</button><button class="btn ghost" data-act="av-edit" data-id="${id}">✎ Modifier / refaire</button></div>`
         : p.statut === 'publie' ? '' : `<div class="actions"><button class="btn ghost" data-act="av-edit" data-id="${id}">✎ Modifier / refaire</button></div>`;
+    const bmedia = canEdit() && p.statut !== 'publie' ? `<div class="actions"><button class="btn ghost" data-act="med-open" data-id="${id}">📎 ${aMedia(p) ? 'Changer le média' : 'Rattacher un média'}</button>${aMedia(p) ? `<button class="btn ghost danger" data-act="med-retirer" data-id="${id}">Retirer</button>` : ''}</div>` : '';
     return `<article class="review" id="r-${id}">${apercu(p)}
       <div class="sideact"><div class="meta">${pill(p)}<span class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</span>${reseaux(p)}</div>
       <h3>${esc(p.titre)}</h3>
       ${p.statut === 'a_refaire' && p.demande ? `<div class="why"><b>Ta demande :</b> ${esc(p.demande)}</div>` : ''}
-      ${boutons}
+      ${boutons}${bmedia}
       ${ed && canEdit() ? `<div class="editbox">
         <label>Texte ${esc(NETS[n]?.l)}<textarea id="cap-${id}" rows="6">${esc(p.textes?.[n] || '')}</textarea></label>
         <div class="two"><label>Date<input type="date" id="dt-${id}" value="${esc(p.date)}"></label><label>Heure<input type="time" id="hr-${id}" value="${esc(p.heure)}"></label></div>
@@ -70,7 +81,8 @@ export function createEcrans(c) {
     const base = visibles(), nb = s => base.filter(p => p.statut === s).length;
     const tabs = [['a_valider', 'À valider'], ['a_refaire', 'À refaire'], ['pret', 'Validés'], ['tous', 'Tous']].map(([k, l]) => `<button class="tab ${ui.statut === k && !ui.focus ? 'on' : ''}" data-act="av-statut" data-s="${k}">${l}${k !== 'tous' ? ` <span class="count">${nb(k)}</span>` : ''}</button>`).join('');
     const liste = base.filter(p => ui.focus ? p.id === ui.focus : (ui.statut === 'tous' ? p.statut !== 'publie' : p.statut === ui.statut)).sort(tri);
-    return `<div class="row between"><h1>À valider</h1>${filtreHtml()}</div>
+    const sans = base.filter(p => !aMedia(p) && p.statut !== 'publie').length;
+    return `<div class="row between"><h1>À valider</h1><div class="row">${canEdit() && FS.supported() && sans ? `<button class="btn ghost" data-act="med-auto">📎 Rattacher automatiquement les médias (${sans})</button>` : ''}${filtreHtml()}</div></div>
       ${ui.focus ? '<p><button class="btn ghost" data-act="av-retour">← Retour à la liste</button></p>' : `<div class="tabs">${tabs}</div>`}
       ${liste.map(carte).join('') || `<section class="card"><p>${ui.statut === 'a_valider' ? 'Rien à valider pour le moment.' : 'Aucun post dans cette liste.'}</p></section>`}`;
   }
@@ -114,15 +126,16 @@ export function createEcrans(c) {
   /* ============================== PUBLIER ============================== */
   const chiffres = t => { let d = String(t || '').replace(/[^\d+]/g, ''); if (d.startsWith('+')) d = d.slice(1); else if (d.startsWith('00')) d = d.slice(2); else if (d.startsWith('0')) d = '33' + d.slice(1); return d.replace(/\D/g, ''); };
   function lignePost(p, s) {
-    const id = esc(p.id), faits = p.faits || {}, m = p.media || {}, u = [m.url, (m.slides || [])[0]].find(urlOk);
+    const id = esc(p.id), faits = p.faits || {}, m = p.media || {}, u = aMedia(p) || [m.url, (m.slides || [])[0]].find(urlOk);
     const lignes = netsDe(p).filter(n => n !== 'whatsapp').map(n => `<div class="pubnet"><span class="net" style="--n:${NETS[n].c}">${NETS[n].l}</span>
-      <button class="btn sm ghost" data-act="pub-copy" data-id="${id}" data-n="${n}">Copier le texte</button>${u ? `<button class="btn sm ghost" data-act="pub-dl" data-id="${id}">Télécharger le visuel</button>` : ''}
+      <button class="btn sm ghost" data-act="pub-copy" data-id="${id}" data-n="${n}">Copier le texte</button>${u ? `<button class="btn sm ghost" data-act="pub-dl" data-id="${id}" data-n="${n}">Télécharger le visuel</button>` : ''}
       <button class="btn sm" data-act="pub-open" data-id="${id}" data-n="${n}">Publier sur ${esc(NETS[n].l)} ↗</button>
       ${canEdit() ? `<label class="chk"><input type="checkbox" data-act="pub-fait" data-id="${id}" data-n="${n}" ${faits[n] ? 'checked' : ''}> Fait</label>` : ''}</div>`).join('');
+    const stories = (m.fichiers || []).some(x => x.role === 'story') ? `<div class="pubnet"><span class="net" style="--n:#666">Stories</span><button class="btn sm ghost" data-act="pub-dl" data-id="${id}" data-n="story">Télécharger les Stories</button></div>` : '';
     const wa = netsDe(p).includes('whatsapp') ? `<div class="pubnet"><span class="net" style="--n:${NETS.whatsapp.c}">WhatsApp</span>
       ${(s.contacts || []).length ? `<select id="wa-${id}">${s.contacts.map(k => `<option value="${esc(k.id)}">${esc(k.nom)}${k.type === 'groupe' ? ' (groupe)' : ''}</option>`).join('')}</select><button class="btn sm" data-act="pub-wa" data-id="${id}">Envoyer sur WhatsApp ↗</button>` : '<span class="muted small">Aucun contact : ajoute-en dans Sociétés › Modifier › Règles &amp; contacts.</span>'}
       ${canEdit() ? `<label class="chk"><input type="checkbox" data-act="pub-fait" data-id="${id}" data-n="whatsapp" ${faits.whatsapp ? 'checked' : ''}> Fait</label>` : ''}</div>` : '';
-    return `<div class="pubpost"><div class="row between"><div><b>${esc(p.titre)}</b><div class="muted small">${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</div></div>${pill(p)}</div>${lignes}${wa}</div>`;
+    return `<div class="pubpost"><div class="row between"><div><b>${esc(p.titre)}</b><div class="muted small">${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</div></div>${pill(p)}</div>${lignes}${stories}${wa}</div>`;
   }
   function viewPublier() {
     const base = visibles().filter(p => ['pret', 'programme'].includes(p.statut)).sort(tri);
@@ -187,7 +200,15 @@ export function createEcrans(c) {
     /* publier */
     'pub-copy': t => copy(legende(P(t.dataset.id), t.dataset.n)),
     'pub-open': async t => { const n = t.dataset.n; await copy(legende(P(t.dataset.id), n)); window.open(NETS[n].publier, '_blank', 'noopener'); toast('Texte copié : colle-le dans la page qui s\'ouvre'); },
-    'pub-dl': t => { const m = P(t.dataset.id).media || {}, u = [m.url, (m.slides || [])[0]].find(urlOk); if (u) window.open(u, '_blank', 'noopener'); },
+    'pub-dl': async t => {
+      const p = P(t.dataset.id), m = p.media || {};
+      if (aMedia(p)) {
+        const s = soc(p.entrepriseId), liste = M.fichiersPour(m, t.dataset.n); let n = 0;
+        for (const f of liste) { const u = await M.urlLocale(s, f.nom).catch(() => null); if (!u) continue; const a = document.createElement('a'); a.href = u; a.download = f.nom; document.body.appendChild(a); a.click(); a.remove(); n++; await new Promise(r => setTimeout(r, 300)); }
+        return toast(n ? n + ' fichier(s) téléchargé(s)' : 'Fichier introuvable sur cet appareil : ouvre le logiciel sur le PC (' + (liste[0]?.nom || 'média') + ')', 5000);
+      }
+      const u = [m.url, (m.slides || [])[0]].find(urlOk); if (u) window.open(u, '_blank', 'noopener');
+    },
     'pub-fait': async t => {
       const p = P(t.dataset.id), faits = { ...(p.faits || {}), [t.dataset.n]: t.checked }, tous = netsDe(p).every(n => faits[n]);
       await savePost(p.id, tous ? { faits, statut: 'publie', publieLe: new Date().toISOString() } : { faits, statut: p.statut === 'publie' ? 'pret' : p.statut, publieLe: p.statut === 'publie' ? '' : p.publieLe });
@@ -201,7 +222,56 @@ export function createEcrans(c) {
       if (navigator.share && matchMedia('(pointer:coarse)').matches) { try { await navigator.share({ text: txt }); return; } catch (e) { if (e.name === 'AbortError') return; } }
       window.open(`https://wa.me/${num}?text=${encodeURIComponent(txt)}`, '_blank', 'noopener');
     },
+    /* médias */
+    'med-open': async t => {
+      const p = P(t.dataset.id), s = soc(p.entrepriseId);
+      try { const r = await M.indexer(s, { geste: true, force: true }); const prop = M.proposer(p, r.files).map(x => x.nom), deja = (p.media?.fichiers || []).map(x => x.nom);
+        ui.med = { id: p.id, files: r.files, lies: r.lies, propose: prop, sel: new Set(deja.length ? deja : prop) }; ui.med.propose = [...new Set([...prop, ...deja])]; renderMed(); } catch (e) { toast('Dossier inaccessible : ' + e.message); }
+    },
+    'med-toggle': t => { const d = ui.med; t.checked ? d.sel.add(t.dataset.nom) : d.sel.delete(t.dataset.nom); const n = $('#modal footer .muted'); if (n) n.textContent = d.sel.size + ' fichier(s) choisi(s)'; },
+    'med-close': () => { ui.med = null; renderMed(); },
+    'med-save': async () => {
+      const d = ui.med, p = P(d.id), s = soc(p.entrepriseId), sel = d.files.filter(f => d.sel.has(f.name)).map(f => infoFichier(f));
+      if (!sel.length) return toast('Coche au moins un fichier');
+      d.attente = 'Fabrication de la miniature…'; renderMed();
+      try { const m = await rattacher(p, s, sel); ui.med = null; renderMed(); c.render(); toast(`Média rattaché (${m.kind === 'video' ? 'vidéo' : m.kind === 'carousel' ? 'carrousel' : 'image'}, miniature ${Math.round(m.posterOctets / 1024)} Ko)`); }
+      catch (e) { d.attente = ''; renderMed(); toast('Échec : ' + e.message, 6000); }
+    },
+    'med-retirer': async t => { if (!confirm('Retirer le média de ce post ? Les fichiers ne sont pas supprimés.')) return; await savePost(t.dataset.id, { media: {} }); toast('Média retiré'); },
+    'med-auto': async () => {
+      const cibles = visibles().filter(p => !aMedia(p) && p.statut !== 'publie'); let ok = 0, sans = 0, err = 0;
+      toast('Recherche des médias…', 60000);
+      for (const sc of app.societes.filter(x => cibles.some(p => p.entrepriseId === x.id))) {
+        let r; try { r = await M.indexer(sc, { geste: true, force: true }); } catch { continue; }
+        for (const p of cibles.filter(x => x.entrepriseId === sc.id)) {
+          const prop = M.proposer(p, r.files); if (!prop.length) { sans++; continue; }
+          try { await rattacher(p, sc, prop); ok++; } catch (e) { err++; }
+        }
+      }
+      toast(`${ok} post(s) rattaché(s)${sans ? ', ' + sans + ' sans fichier correspondant' : ''}${err ? ', ' + err + ' en échec' : ''}`, 7000);
+    },
+    'med-autoriser': async () => { for (const sc of app.societes) { try { await M.indexer(sc, { geste: true, force: true }); } catch {} } c.render(); },
     'pub-modele': t => { const s = soc(t.dataset.s); copy([s.waAccueil, s.waAbsence, s.waRapides].filter(Boolean)[Number(t.dataset.i)]); },
   };
-  return { viewAvalider, viewPlanning, viewPublier, actions };
+  /* ============================== MÉDIAS ============================== */
+  const infoFichier = (f, d) => f.p || { nom: f.name, type: f.kind, role: 'principal', reseau: '', n: 0 };
+  const etiquette = f => [f.type === 'video' ? 'vidéo' : 'image', f.role === 'story' ? 'Story ' + (f.n || '') : f.role === 'slide' ? 'carrousel ' + (f.n || '') : '', f.reseau ? NETS[f.reseau]?.l : ''].filter(Boolean).join(' · ');
+  function renderMed() {
+    const d = ui.med; let m = $('#modal'); if (!d) { m?.remove(); return; }
+    if (!m) { m = document.createElement('div'); m.id = 'modal'; document.body.appendChild(m); }
+    const p = P(d.id), prop = new Set(d.propose), ligne = f => `<li><label class="chk"><input type="checkbox" data-act="med-toggle" data-nom="${esc(f.name)}" ${d.sel.has(f.name) ? 'checked' : ''}> <span><b>${esc(f.name)}</b><span class="muted small"> — ${esc(etiquette(infoFichier(f)))} · ${esc(f.dossier)}</span></span></label></li>`;
+    const a = d.propose.map(n => d.files.find(f => f.name === n)).filter(Boolean), b = d.files.filter(f => !prop.has(f.name)).sort((x, y) => y.name.localeCompare(x.name)).slice(0, 150);
+    const corps = d.attente ? `<p>${esc(d.attente)}</p>` : !d.lies ? '<p>Aucun dossier d\'enregistrement n\'est choisi sur cet ordinateur. Va dans <b>Sociétés › Modifier › Dossiers</b> et clique « Choisir le dossier ».</p>'
+      : `<p class="muted small">Le logiciel retrouve les fichiers d'après leur nom (« Société - AAAA-MM-JJ - Titre - Réseau »). Coche ceux de ce post : ils ne sont ni copiés ni modifiés.</p>
+         <h3>Proposés pour « ${esc(p?.titre)} » (${a.length})</h3><ul class="dos">${a.map(ligne).join('') || '<li class="muted">Aucun fichier ne correspond au titre et à la date.</li>'}</ul>
+         <h3>Autres fichiers (${d.files.length - a.length})</h3><ul class="dos">${b.map(ligne).join('') || '<li class="muted">—</li>'}</ul>`;
+    m.innerHTML = `<div class="dialog wide"><header><h2>Média du post</h2>${d.attente ? '' : '<button class="btn ghost" data-act="med-close">✕</button>'}</header><div class="body">${corps}</div>
+      <footer><span class="muted small">${d.sel.size} fichier(s) choisi(s)</span>${d.attente ? '' : '<button class="btn" data-act="med-save">Rattacher</button>'}</footer></div>`;
+  }
+  async function rattacher(p, s, sel) {
+    const media = await M.construireMedia(s, sel);
+    await savePost(p.id, { media });
+    return media;
+  }
+  return { viewAvalider, viewPlanning, viewPublier, actions, renderMed };
 }

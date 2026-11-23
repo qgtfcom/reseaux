@@ -5,9 +5,12 @@ import * as DB from './db.js';
 import * as FS from './fs.js';
 import { NETS, STATUTS } from './model.js';
 import { zip, crc32 } from './zip.js';
+import * as M from './media.js';
+import * as C from './compress.js';
 
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const MAX_MEDIA = 25 * 1024 * 1024;
+export const LIMITES = { miniature: 40000, video: 3000000 };   // octets : miniature d'image, petite vidéo
 export const LIEUX = { both: 'Les deux : G: (Google Drive) et P: (pCloud)', G: 'G: seulement (Google Drive)', P: 'P: seulement (pCloud)' };
 
 export const moisCourant = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
@@ -68,13 +71,42 @@ const texteLisible = p => {
   return `=== ${p.date || '?'} ${p.heure || ''} · ${p.titre || '(sans titre)'} ===\nRéseaux : ${nets || '—'}\nStatut : ${STATUTS[p.statut] || p.statut}${p.publieLe ? ' le ' + String(p.publieLe).slice(0, 10) : ''}\n${bloc}${p.hashtags ? '\nHashtags : ' + p.hashtags : ''}\n`;
 };
 
+const nomSur = s => String(s).replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 60);
+/** Médias d'un post stockés dans les dossiers du PC : miniatures compressées + une petite vidéo. Les originaux ne sont que LUS. */
+async function mediasLocaux(societe, p, files, manquants, stats, onEtape) {
+  const m = p.media, fich = m.fichiers || [];
+  let video = false;
+  for (const f of fich) {
+    const base = `medias/${p.id}_${nomSur(f.role + (f.n || '') + (f.reseau ? '-' + f.reseau : ''))}`;
+    let file = null; try { file = await M.ouvrirFichier(societe, f.nom); } catch {}
+    if (!file) { manquants.push(`${p.titre || p.id} : ${f.nom} (fichier introuvable sur cet ordinateur)`); continue; }
+    stats.avant += file.size;
+    try {
+      if (f.type === 'image') {
+        const r = await C.miniatureImage(file, { max: 640, maxBytes: LIMITES.miniature }); files.push({ name: base + '.jpg', data: new Uint8Array(await r.blob.arrayBuffer()) }); stats.apres += r.blob.size; stats.n++;
+      } else if (!video) {                        // une seule petite vidéo par post (TikTok / Facebook / Instagram sont en général la même vidéo)
+        video = true;
+        onEtape(`${p.titre || p.id} : compression de la vidéo (durée de la vidéo)…`);
+        const mini = await C.miniatureVideo(file, { max: 640, maxBytes: LIMITES.miniature }); files.push({ name: `medias/${p.id}_miniature.jpg`, data: new Uint8Array(await mini.blob.arrayBuffer()) }); stats.apres += mini.blob.size;
+        const r = await C.compresserVideo(file, { maxBytes: LIMITES.video, onProgress: x => onEtape(`${p.titre || p.id} : compression de la vidéo ${Math.round(x * 100)} %…`) });
+        if (r.trop_gros) manquants.push(`${p.titre || p.id} : vidéo gardée en miniature seulement (${Math.round(r.octets / 1e6 * 10) / 10} Mo après compression, limite ${LIMITES.video / 1e6} Mo)`);
+        else { files.push({ name: `medias/${p.id}_video.${r.ext}`, data: new Uint8Array(await r.blob.arrayBuffer()) }); stats.apres += r.octets; stats.n++; }
+      }
+    } catch (e) { manquants.push(`${p.titre || p.id} : ${f.nom} (compression impossible : ${e.message})`); }
+  }
+  if (!files.some(x => x.name.startsWith(`medias/${p.id}_`)) && /^data:/.test(m.poster || '')) {     // repli : la miniature enregistrée avec le post
+    const d = C.depuisDataUrl(m.poster); if (d) { files.push({ name: `medias/${p.id}_miniature.jpg`, data: d.bytes }); stats.apres += d.bytes.length; stats.n++; }
+  }
+}
+
 /** Construit le ZIP d'une société pour un mois. */
-export async function construireZip({ mois, societe, posts }) {
-  const files = [], manquants = []; let nbMedias = 0;
+export async function construireZip({ mois, societe, posts }, onEtape = () => {}) {
+  const files = [], manquants = []; let nbMedias = 0; const stats = { avant: 0, apres: 0, n: 0 };
   const liste = posts.map(p => { const { id, ...d } = p; return { id, ...d }; });
   files.push({ name: 'posts.json', data: JSON.stringify(liste, null, 1) });
   files.push({ name: 'posts.txt', data: posts.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).map(texteLisible).join('\n') });
   for (const p of posts) {
+    if (p.media?.fichiers?.length) { await mediasLocaux(societe, p, files, manquants, stats, onEtape); continue; }
     const m = p.media || {}, urls = [m.url, m.poster, ...(m.slides || [])].filter(Boolean);
     let i = 0;
     for (const u of urls) {
@@ -83,7 +115,8 @@ export async function construireZip({ mois, societe, posts }) {
       if (r) { files.push({ name: `medias/${p.id}_${++i}.${r.ext}`, data: r.bytes }); nbMedias++; } else manquants.push(`${p.titre || p.id} : ${u}`);
     }
   }
-  files.unshift({ name: 'LISEZMOI.txt', data: `Archive Pilote Réseaux — ${societe.nom} — ${libelleMois(mois)}\nCréée le ${new Date().toLocaleString('fr-FR')}\n\nContenu : ${posts.length} post(s) publié(s) ; ${nbMedias} fichier(s) média.\n- posts.json : toutes les données des posts (réimportables)\n- posts.txt : textes, dates et réseaux, lisibles\n- medias/ : visuels et petites vidéos récupérés\n\nLes médias seront compressés à la séance 3.\n` + (manquants.length ? `\nMédias NON inclus (adresse inaccessible ou fichier > 25 Mo) :\n- ${manquants.join('\n- ')}\nLes fichiers produits restent dans les dossiers d'enregistrement de la société.\n` : '') });
+  nbMedias += stats.n;
+  files.unshift({ name: 'LISEZMOI.txt', data: `Archive Pilote Réseaux — ${societe.nom} — ${libelleMois(mois)}\nCréée le ${new Date().toLocaleString('fr-FR')}\n\nContenu : ${posts.length} post(s) publié(s) ; ${nbMedias} fichier(s) média.\n- posts.json : toutes les données des posts (réimportables)\n- posts.txt : textes, dates et réseaux, lisibles\n- medias/ : miniatures compressées (JPEG) et petites vidéos (480 p)\n\nMédias compressés : ${Math.round(stats.avant / 1024)} Ko d'originaux lus → ${Math.round(stats.apres / 1024)} Ko archivés. Les fichiers originaux n'ont pas été modifiés et restent dans les dossiers d'enregistrement.\n` + (manquants.length ? `\nMédias NON inclus en entier (adresse inaccessible, fichier introuvable ou trop gros) :\n- ${manquants.join('\n- ')}\nLes fichiers produits restent dans les dossiers d'enregistrement de la société.\n` : '') });
   return { bytes: zip(files), nbMedias, manquants };
 }
 
@@ -111,6 +144,7 @@ export async function archiver(app, items, lieu, suppr, onEtape = () => {}) {
       if (!h) { absents.push(d.nom); continue; }
       try { if (await FS.ensurePermission(h, true)) cibles.push({ d, h }); else absents.push(d.nom + ' (accès refusé)'); } catch { absents.push(d.nom); }
     }
+    if (it.posts.some(p => p.media?.fichiers?.length)) { try { await M.indexer(it.societe, { geste: true, force: true }); } catch {} }
     if (!dests.length || absents.length) rapport.push({ ...it, ok: false, msg: dests.length ? 'Dossier(s) à choisir sur cet ordinateur (Sociétés › Modifier › Dossiers) : ' + absents.join(', ') : 'Aucun dossier Archives pour ce réglage.' });
     else prets.push({ ...it, cibles });
   }
@@ -119,7 +153,7 @@ export async function archiver(app, items, lieu, suppr, onEtape = () => {}) {
     const nom = `${it.mois}_${slug(it.societe.nom)}.zip`;
     try {
       onEtape(`${it.societe.nom} · ${libelleMois(it.mois)} : création du ZIP…`);
-      const z = await construireZip(it);
+      const z = await construireZip(it, onEtape);
       const ecrits = [];
       for (const { d, h } of it.cibles) { onEtape(`${it.societe.nom} · ${libelleMois(it.mois)} : écriture dans ${d.nom}…`); ecrits.push(await ecrireEtVerifier(h, nom, z.bytes)); }
       if (suppr) for (const p of it.posts) await DB.removeDoc('posts', p.id);
