@@ -13,6 +13,7 @@ export const STATUTS = { idee: 'Idée', a_creer: 'En production', a_valider: 'À
 export const ROLES_DOSSIER = { sources: 'Photos / vidéos SOURCES', enregistrement: "ENREGISTREMENT des fichiers produits", musiques: 'MUSIQUES', archives: 'ARCHIVES (ZIP mensuels des posts publiés)' };
 export const POLICES = ['Montserrat', 'Poppins', 'Bebas Neue', 'Oswald', 'Anton', 'Inter', 'Roboto', 'Lato', 'Playfair Display', 'Bricolage Grotesque', 'Arial', 'Georgia'];
 
+const RYTHME = 'Rythme de fabrication : les visuels (carrousels, Stories) sont construits par exemple le lundi et le mardi ; les vidéos le mercredi ou le jeudi, selon les semaines.';
 export const REGLES_DEFAUT = [
   'Le texte est toujours placé EN BAS de l\'image ou de la vidéo, sans cadre ni forme colorée.',
   'Aucun visage de face (vues de dos et mains acceptées).',
@@ -21,6 +22,7 @@ export const REGLES_DEFAUT = [
   'Jamais de faux avant/après, de faux avis ni de fausse réaction client.',
   'Un média généré n\'est jamais présenté comme un vrai chantier ou une vraie réalisation.',
   'Musique : uniquement celle du dossier Musiques, passage différent à chaque vidéo, volume bas, avec fondu. Jamais de musique synthétique douce.',
+  RYTHME,
 ].map((texte, i) => ({ id: 'g' + (i + 1), texte, actif: true }));
 
 export const VISIBILITE_DEFAUT = "Accroche forte dans les 2 premières secondes (résultat, question directe ou erreur courante, jamais de bonjour ni de logo au début) ; vidéos de 15 à 30 s avec un plan toutes les 2 à 3 s et des sous-titres incrustés ; donner une raison d'enregistrer ou de partager (astuce utile, liste, « envoie ça à… ») ; terminer chaque texte par une question qui appelle un commentaire ; glisser des mots-clés locaux (métier + ville) dans le texte et à l'oral ; pas de lien externe dans le texte Facebook ; pour TikTok, suggérer un type de son tendance à choisir dans l'appli ; pour LinkedIn, ton professionnel et concret, orienté entreprises, gestionnaires de bâtiments et collectivités, 3 à 4 hashtags maximum. Dans chaque script, indique l'accroche, le texte à l'écran et la durée de chaque plan.";
@@ -75,7 +77,9 @@ export function newSocieteId(nom) {
 }
 
 export async function ensureParametres() {
-  if (!(await DB.getDoc('parametres', 'regles'))) await DB.saveDoc('parametres', 'regles', { globales: REGLES_DEFAUT, visibilite: VISIBILITE_DEFAUT });
+  const rg = await DB.getDoc('parametres', 'regles');
+  if (!rg) await DB.saveDoc('parametres', 'regles', { globales: REGLES_DEFAUT, visibilite: VISIBILITE_DEFAUT });
+  else { const d = rg.data || rg; if (Array.isArray(d.globales) && !d.globales.some(r => r.texte === RYTHME)) await DB.saveDoc('parametres', 'regles', { ...d, globales: [...d.globales, { id: 'g' + (d.globales.length + 1) + 'r', texte: RYTHME, actif: true }] }); }
   if (!(await DB.getDoc('parametres', 'app'))) await DB.saveDoc('parametres', 'app', { retentionJours: 365, archiveStockage: 'both' });
 }
 

@@ -7,7 +7,7 @@ import * as Media from './media.js';
 import { createEcrans } from './ecrans.js';
 import { NETS, JOURS, STATUTS, ROLES_DOSSIER, POLICES, normalizeSociete, newSocieteId, ensureParametres, importerAncienneAppli, uid } from './model.js';
 
-const VERSION = '1.2.0 (séance 3)';
+const VERSION = '1.2.1';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -356,6 +356,7 @@ async function migrerSeance2() {
     if (!canEdit()) return;
     let change = (await Arch.ensureArchiveDossiers(app)) > 0;
     if (await Media.ensureDossiersLocaux(app)) change = true;
+    const avant = JSON.stringify((await DB.getDoc('parametres', 'regles'))?.data || {}); await ensureParametres(); if (JSON.stringify((await DB.getDoc('parametres', 'regles'))?.data || {}) !== avant) change = true;
     if (isAdmin() && Number(app.params.retentionJours) < 365) { await DB.saveDoc('parametres', 'app', { ...app.params, retentionJours: 365 }); change = true; }
     if (change) { await S.refreshPending(); await loadAll(); render(); S.sync().then(refresh); }
   } catch (e) { console.warn('Migration séance 2', e); }
