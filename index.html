@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pilote Réseaux</title>
+<meta name="theme-color" content="#15181e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div id="app"><div class="gate"><p>Chargement…</p></div></div>
+<script type="module">
+  import { start } from './js/app.js';
+  start().catch(e => { document.getElementById('app').innerHTML = '<div class="gate"><h1>Erreur</h1><pre>' + String(e && e.stack || e) + '</pre></div>'; });
+</script>
+</body>
+</html>
