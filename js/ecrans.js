@@ -35,6 +35,7 @@ export function createEcrans(c) {
 
   /* ============================== À VALIDER ============================== */
   const aMedia = p => !!(p.media?.fichiers?.length);
+  const estPasse = p => p.statut !== 'publie' && !!p.date && p.date < iso(new Date());
   function mediaLocal(p) {
     const m = p.media, f = m.fichiers, kind = m.kind || 'image', s = f.filter(x => x.role === 'story'), sl = f.filter(x => x.role === 'slide'), vi = f.filter(x => x.type === 'video');
     const cible = kind === 'video' ? [(vi[0] || f[0]).nom] : kind === 'carousel' ? sl.map(x => x.nom) : [(f.find(x => x.type === 'image' && x.role === 'principal') || f[0]).nom];
@@ -63,11 +64,13 @@ export function createEcrans(c) {
       : p.statut === 'pret' ? `<div class="actions"><button class="btn ghost" data-act="av-annuler" data-id="${id}">Annuler la validation</button><button class="btn ghost" data-act="av-edit" data-id="${id}">✎ Modifier / refaire</button></div>`
         : p.statut === 'publie' ? '' : `<div class="actions"><button class="btn ghost" data-act="av-edit" data-id="${id}">✎ Modifier / refaire</button></div>`;
     const bmedia = canEdit() && p.statut !== 'publie' ? `<div class="actions"><button class="btn ghost" data-act="med-open" data-id="${id}">📎 ${aMedia(p) ? 'Changer le média' : 'Rattacher un média'}</button>${aMedia(p) ? `<button class="btn ghost danger" data-act="med-retirer" data-id="${id}">Retirer</button>` : ''}</div>` : '';
-    return `<article class="review" id="r-${id}">${apercu(p)}
-      <div class="sideact"><div class="meta">${pill(p)}<span class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</span>${reseaux(p)}</div>
+    const passe = estPasse(p), sc = soc(p.entrepriseId);
+    const bsuppr = canEdit() && p.statut !== 'publie' ? `<div class="actions one"><button class="btn ghost danger" data-act="av-suppr" data-id="${id}">🗑 Supprimer ce post${aMedia(p) ? ' et sa vidéo' : ''}</button></div>` : '';
+    return `<article class="review ${passe ? 'passe' : ''}" id="r-${id}" style="--sc:${esc(sc?.couleur || '#2f54eb')}"><div class="band"></div>${apercu(p)}
+      <div class="sideact"><div class="meta">${pill(p)}${passe ? '<span class="pill late">⏰ Date passée</span>' : ''}<span class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</span>${reseaux(p)}</div>
       <h3>${esc(p.titre)}</h3>
       ${p.statut === 'a_refaire' && p.demande ? `<div class="why"><b>Ta demande :</b> ${esc(p.demande)}</div>` : ''}
-      ${boutons}${bmedia}
+      ${boutons}${bmedia}${bsuppr}
       ${ed && canEdit() ? `<div class="editbox">
         <label>Texte ${esc(NETS[n]?.l)}<textarea id="cap-${id}" rows="6">${esc(p.textes?.[n] || '')}</textarea></label>
         <div class="two"><label>Date<input type="date" id="dt-${id}" value="${esc(p.date)}"></label><label>Heure<input type="time" id="hr-${id}" value="${esc(p.heure)}"></label></div>
@@ -78,13 +81,15 @@ export function createEcrans(c) {
         <p class="muted small">« À refaire » met le post en attente de reprise et mémorise ta demande pour ne plus refaire la même erreur. Le nouveau visuel ou la nouvelle vidéo sera produit à la séance 3.</p></div>` : ''}</div></article>`;
   }
   function viewAvalider() {
-    const base = visibles(), nb = s => base.filter(p => p.statut === s).length;
-    const tabs = [['a_valider', 'À valider'], ['a_refaire', 'À refaire'], ['pret', 'Validés'], ['tous', 'Tous']].map(([k, l]) => `<button class="tab ${ui.statut === k && !ui.focus ? 'on' : ''}" data-act="av-statut" data-s="${k}">${l}${k !== 'tous' ? ` <span class="count">${nb(k)}</span>` : ''}</button>`).join('');
-    const liste = base.filter(p => ui.focus ? p.id === ui.focus : (ui.statut === 'tous' ? p.statut !== 'publie' : p.statut === ui.statut)).sort(tri);
-    const sans = base.filter(p => !aMedia(p) && p.statut !== 'publie').length;
-    return `<div class="row between"><h1>À valider</h1><div class="row">${canEdit() && FS.supported() && sans ? `<button class="btn ghost" data-act="med-auto">📎 Rattacher automatiquement les médias (${sans})</button>` : ''}${filtreHtml()}</div></div>
-      ${ui.focus ? '<p><button class="btn ghost" data-act="av-retour">← Retour à la liste</button></p>' : `<div class="tabs">${tabs}</div>`}
-      ${liste.map(carte).join('') || `<section class="card"><p>${ui.statut === 'a_valider' ? 'Rien à valider pour le moment.' : 'Aucun post dans cette liste.'}</p></section>`}`;
+    const base = visibles(), nb = s => base.filter(p => p.statut === s).length, nbPasse = base.filter(estPasse).length;
+    const tuiles = [['a_valider', '✅', 'À valider', nb('a_valider'), 'blue'], ['a_refaire', '🔁', 'À refaire', nb('a_refaire'), 'red'], ['pret', '👍', 'Validés', nb('pret'), 'green'], ['passe', '⏰', 'Dates passées', nbPasse, 'orange'], ['tous', '🗂', 'Tous', base.filter(p => p.statut !== 'publie').length, 'grey']]
+      .map(([k, ic, l, n, c]) => `<button class="tile t-${c} ${ui.statut === k && !ui.focus ? 'on' : ''}" data-act="av-statut" data-s="${k}"><span class="ti">${ic}</span><span class="tn">${n}</span><span class="tl">${l}</span></button>`).join('');
+    const liste = base.filter(p => ui.focus ? p.id === ui.focus : ui.statut === 'passe' ? estPasse(p) : (ui.statut === 'tous' ? p.statut !== 'publie' : p.statut === ui.statut)).sort(tri);
+    const vide = { a_valider: 'Rien à valider pour le moment. 🎉', passe: 'Aucun post en retard. 👌' }[ui.statut] || 'Aucun post dans cette liste.';
+    const nettoyer = !ui.focus && ui.statut === 'passe' && liste.length && canEdit() ? `<div class="banner warn">⏰ ${liste.length} post(s) ont une date déjà passée sans avoir été publiés. <button class="btn sm ghost danger" data-act="av-suppr-passes">🗑 Tout supprimer</button> <span class="muted small">(les fichiers restent dans tes dossiers)</span></div>` : '';
+    return `<div class="row between"><h1>À valider</h1><div class="row">${canEdit() && FS.supported() && base.some(p => !aMedia(p) && p.statut !== 'publie') ? `<button class="btn ghost" data-act="med-auto">📎 Rattacher automatiquement les médias (${base.filter(p => !aMedia(p) && p.statut !== 'publie').length})</button>` : ''}${filtreHtml()}</div></div>
+      ${ui.focus ? '<p><button class="btn ghost" data-act="av-retour">← Retour à la liste</button></p>' : `<div class="tiles">${tuiles}</div>`}
+      ${nettoyer}${liste.map(carte).join('') || `<section class="card"><p>${vide}</p></section>`}`;
   }
 
   /* ============================== PLANNING ============================== */
@@ -159,6 +164,17 @@ export function createEcrans(c) {
     'av-net': t => { ui.capNet[t.dataset.id] = t.dataset.n; c.render(); },
     'av-edit': t => { ui.editing = ui.editing === t.dataset.id ? null : t.dataset.id; c.render(); },
     'av-valider': async t => { await savePost(t.dataset.id, { statut: 'pret', valideLe: new Date().toISOString() }); toast('Validé : il apparaît dans « Publier »'); },
+    'av-suppr': async t => {
+      const p = P(t.dataset.id); if (!p) return;
+      if (!confirm(`Supprimer le post « ${p.titre} » ?${aMedia(p) ? '\n\nLa vidéo / les images rattachées sont retirées du post ; les fichiers restent dans tes dossiers.' : ''}`)) return;
+      await DB.removeDoc('posts', p.id); await S.refreshPending(); ui.editing = null; ui.focus = null; await c.refresh(); toast('Post supprimé'); S.sync().then(c.refresh);
+    },
+    'av-suppr-passes': async () => {
+      const l = visibles().filter(estPasse); if (!l.length) return;
+      if (!confirm(`Supprimer ces ${l.length} post(s) dont la date est passée ?\n\n${l.slice(0, 12).map(p => '• ' + p.titre).join('\n')}${l.length > 12 ? '\n…' : ''}\n\nLes fichiers restent dans tes dossiers.`)) return;
+      for (const p of l) await DB.removeDoc('posts', p.id);
+      await S.refreshPending(); await c.refresh(); toast(l.length + ' post(s) supprimé(s)'); S.sync().then(c.refresh);
+    },
     'av-annuler': t => savePost(t.dataset.id, { statut: 'a_valider', valideLe: '' }),
     'av-save': async t => {
       const id = t.dataset.id, p = P(id), n = netOf(p);

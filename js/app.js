@@ -78,7 +78,16 @@ function viewAccueil() {
     [linked > 0, 'Dossiers sources / enregistrement / musiques déclarés'],
   ];
   const rows = app.posts.slice(0, 30).map(p => `<tr><td>${fmtDate(p.date)}</td><td>${esc(socName(p.entrepriseId))}</td><td>${esc(p.titre)}</td><td><span class="tag s-${esc(p.statut)}">${esc(STATUTS[p.statut] || p.statut)}</span></td><td>${(p.reseaux || []).map(r => `<i class="dot" style="background:${NETS[r]?.c || '#999'}" title="${esc(NETS[r]?.l || r)}"></i>`).join('')}</td></tr>`).join('');
+  const today = new Date().toISOString().slice(0, 10);
+  const tiles = app.societes.map(sc => {
+    const ps = app.posts.filter(p => p.entrepriseId === sc.id), n = f => ps.filter(f).length;
+    const b = (k, st, bg, fg, v, l) => `<button data-act="tile-go" data-s="${esc(sc.id)}" data-st="${st}" style="background:${bg};color:${fg}"><span class="n">${v}</span><span class="l">${l}</span></button>`;
+    return `<article class="soctile" style="--c:${esc(sc.couleur)}"><h2>${esc(sc.nom)}</h2><div class="mini">
+      ${b('', 'a_valider', '#e6ebff', '#2f54eb', n(p => p.statut === 'a_valider'), 'À valider')}${b('', 'pret', '#e2f5ec', '#16935a', n(p => p.statut === 'pret'), 'Validés')}${b('', 'passe', '#fff1de', '#b86e00', n(p => p.statut !== 'publie' && p.date && p.date < today), 'Dates passées')}</div>
+      <p class="muted small" style="margin:10px 0 0">${n(p => p.media?.fichiers?.length)} post(s) avec média · ${n(p => p.statut === 'publie')} publié(s)</p></article>`;
+  }).join('');
   return `<h1>Bienvenue</h1>
+  ${tiles ? `<div class="soctiles">${tiles}</div>` : ''}
   <section class="card"><h2>Mise en route</h2><ul class="check">${todo.map(([ok, t]) => `<li class="${ok ? 'ok' : ''}">${ok ? '✔' : '○'} ${t}</li>`).join('')}</ul>
   ${!app.imported && canEdit() ? `<button class="btn" data-act="import">Importer mes sociétés et posts (choisir les 3 fichiers .json)</button>` : ''}</section>
   <section class="card"><h2>Mes publications (${app.posts.length})</h2>
@@ -261,6 +270,7 @@ function go(r) { app.route = r; location.hash = '#/' + r; render(); window.scrol
 const E = createEcrans({ app, esc, toast, copy, canEdit, S, $, $$, refresh: () => refresh(), render: () => render(), go: r => go(r) });
 const A = {
   nav: t => go(t.dataset.r),
+  'tile-go': t => { app.ui.filtre = t.dataset.s; app.ui.statut = t.dataset.st; app.ui.focus = null; go('avalider'); },
   sync: async () => { await S.sync(); await refresh(); },
   'set-save': async () => { const u = $('#set-url').value.trim(), c = $('#set-cid').value.trim(); if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)) return toast("L'adresse du script doit se terminer par /exec"); if (!/\.apps\.googleusercontent\.com$/.test(c)) return toast("L'identifiant client doit se terminer par .apps.googleusercontent.com"); S.cfg.set(u, c); await S.initAuth().catch(() => {}); toast('Enregistré'); render(); },
   signout: () => { S.signOut(); render(); },
