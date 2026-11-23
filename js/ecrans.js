@@ -30,6 +30,7 @@ export function createEcrans(c) {
   async function savePost(id, patch) {
     const p = app.posts.find(x => x.id === id); if (!p) return;
     const { id: _i, ...data } = p;
+    if (patch.media?.fichiers?.length && ['a_creer', 'idee'].includes(p.statut)) patch = { ...patch, statut: 'a_valider' };   // média rattaché → le post est prêt à valider
     await DB.saveDoc('posts', id, { ...data, ...patch, majLe: new Date().toISOString() });
     await S.refreshPending(); await c.refresh(); S.sync().then(c.refresh);
   }
