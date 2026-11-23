@@ -10,7 +10,7 @@ export const NETS = {
 };
 export const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 export const STATUTS = { idee: 'Idée', a_creer: 'En production', a_valider: 'À valider', a_refaire: 'À refaire', pret: 'Validé', programme: 'Programmé', publie: 'Publié' };
-export const ROLES_DOSSIER = { sources: 'Photos / vidéos SOURCES', enregistrement: "ENREGISTREMENT des fichiers produits", musiques: 'MUSIQUES' };
+export const ROLES_DOSSIER = { sources: 'Photos / vidéos SOURCES', enregistrement: "ENREGISTREMENT des fichiers produits", musiques: 'MUSIQUES', archives: 'ARCHIVES (ZIP mensuels des posts publiés)' };
 export const POLICES = ['Montserrat', 'Poppins', 'Bebas Neue', 'Oswald', 'Anton', 'Inter', 'Roboto', 'Lato', 'Playfair Display', 'Bricolage Grotesque', 'Arial', 'Georgia'];
 
 export const REGLES_DEFAUT = [
@@ -76,7 +76,7 @@ export function newSocieteId(nom) {
 
 export async function ensureParametres() {
   if (!(await DB.getDoc('parametres', 'regles'))) await DB.saveDoc('parametres', 'regles', { globales: REGLES_DEFAUT, visibilite: VISIBILITE_DEFAUT });
-  if (!(await DB.getDoc('parametres', 'app'))) await DB.saveDoc('parametres', 'app', { retentionJours: 30 });
+  if (!(await DB.getDoc('parametres', 'app'))) await DB.saveDoc('parametres', 'app', { retentionJours: 365, archiveStockage: 'both' });
 }
 
 /** Importe sociétés, posts et vidéos de l'ancienne appli depuis les fichiers JSON choisis sur l'ordinateur

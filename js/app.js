@@ -2,16 +2,18 @@ import * as DB from './db.js';
 import * as S from './sync.js';
 import * as FS from './fs.js';
 import * as IA from './ia.js';
+import * as Arch from './archive.js';
+import { createEcrans } from './ecrans.js';
 import { NETS, JOURS, STATUTS, ROLES_DOSSIER, POLICES, normalizeSociete, newSocieteId, ensureParametres, importerAncienneAppli, uid } from './model.js';
 
-const VERSION = '1.0.0 (séance 1)';
+const VERSION = '1.1.0 (séance 2)';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = d => { try { return new Date(String(d).slice(0, 10) + 'T12:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }); } catch { return ''; } };
 const fmtTime = d => d ? d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
 
-const app = { route: 'accueil', societes: [], posts: [], videos: [], regles: null, params: { retentionJours: 30 }, user: null, wiz: null, acces: null, imported: null, toastT: null };
+const app = { route: 'accueil', societes: [], posts: [], videos: [], regles: null, params: { retentionJours: 30, archiveStockage: 'both' }, events: [], archItems: [], arch: null, user: null, wiz: null, acces: null, imported: null, toastT: null };
 
 /* ============================ Données & droits ============================ */
 async function loadAll() {
@@ -19,9 +21,11 @@ async function loadAll() {
   app.posts = (await DB.listDocs('posts')).map(x => ({ id: x.id, ...x.data })).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   app.videos = (await DB.listDocs('videos')).map(x => ({ id: x.id, ...x.data }));
   app.regles = (await DB.getDoc('parametres', 'regles'))?.data || null;
-  app.params = { retentionJours: 30, ...((await DB.getDoc('parametres', 'app'))?.data || {}) };
+  app.params = { retentionJours: 30, archiveStockage: 'both', ...((await DB.getDoc('parametres', 'app'))?.data || {}) };
+  app.events = (await DB.listDocs('evenements')).map(x => ({ id: x.id, ...x.data }));
   app.imported = await DB.getMeta('imported');
   app.user = S.state.user || (await DB.getMeta('user')) || null;
+  app.archItems = Arch.aArchiver(app);
 }
 const role = () => app.user?.role || (S.savedEmail() ? 'lecture' : '');
 const canEdit = () => ['admin', 'edition'].includes(role());
@@ -51,8 +55,15 @@ function shell(inner) {
     <div class="who">${user}</div></aside>
     <main class="main"><header class="top"><div class="statusbar">${net}${pend}${st.syncing ? '<span class="chip">Synchronisation…</span>' : (st.lastSync ? `<span class="chip">Synchro ${fmtTime(st.lastSync)}</span>` : '')}</div>
     <button class="btn ghost" data-act="sync">↻ Synchroniser</button></header>
+    ${bandeauArchive()}
     ${st.error ? `<div class="banner bad">${esc(st.error)} <span id="gbtn-inline"></span></div>` : ''}
     <div class="content">${inner}</div></main></div>`;
+}
+
+function bandeauArchive() {
+  if (!app.archItems.length || !canEdit() || !FS.supported()) return '';
+  const n = app.archItems.reduce((t, i) => t + i.posts.length, 0);
+  return `<div class="banner warn">📦 <b>Archiver ${esc(Arch.libelle(app.archItems))} ?</b> ${n} post(s) publié(s) à ranger en ZIP par société. <button class="btn sm" data-act="arch-open">Archiver</button></div>`;
 }
 
 function viewAccueil() {
@@ -72,10 +83,8 @@ function viewAccueil() {
   <section class="card"><h2>Mes publications (${app.posts.length})</h2>
   <p class="muted">${Object.entries(counts).map(([k, v]) => `${v} ${esc((STATUTS[k] || k).toLowerCase())}`).join(' · ') || 'Aucune publication pour l\'instant.'}</p>
   ${rows ? `<div class="tablewrap"><table><thead><tr><th>Date</th><th>Société</th><th>Titre</th><th>Statut</th><th>Réseaux</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
-  <p class="muted small">Les écrans « À valider », « Planning », « Publier » et WhatsApp arrivent à la séance 2. Les posts publiés sont supprimés automatiquement ${app.params.retentionJours} jours après leur publication.</p></section>`;
+  <p class="muted small">Les posts publiés sont archivés chaque mois en ZIP (un par société), puis retirés de l'application.</p></section>`;
 }
-
-const viewSoon = (titre, texte) => `<h1>${titre}</h1><section class="card"><p>${texte}</p><p class="muted">Cet écran sera construit à la <b>séance 2</b>. Les données (sociétés, posts importés) sont déjà prêtes.</p></section>`;
 
 /* ----------------------------- Sociétés ----------------------------- */
 function viewSocietes() {
@@ -188,8 +197,10 @@ function viewReglages() {
   <ul class="dos" id="g-regles">${g.map(r => `<li><label class="chk"><input type="checkbox" data-gid="${esc(r.id)}" ${r.actif !== false ? 'checked' : ''} ${canEdit() ? '' : 'disabled'}> ${esc(r.texte)}</label>${isAdmin() ? `<button class="btn sm ghost danger" data-act="g-del" data-id="${esc(r.id)}">✕</button>` : ''}</li>`).join('')}</ul>
   ${isAdmin() ? `<div class="row"><input id="g-new" placeholder="Nouvelle règle commune"><button class="btn sm" data-act="g-add">+ Ajouter</button><button class="btn sm" data-act="g-save">Enregistrer les cases</button></div>
   <label>Règles de visibilité (réseaux sociaux)<textarea id="g-vis" rows="6">${esc(app.regles?.visibilite || '')}</textarea></label><button class="btn sm" data-act="g-vis-save">Enregistrer</button>` : ''}</section>
-  <section class="card"><h2>Conservation des posts</h2><p class="muted">Les posts <b>publiés</b> sont supprimés automatiquement (chaque nuit) après ce délai. Les autres posts ne sont jamais supprimés automatiquement.</p>
-  <div class="row"><label>Jours après publication<input id="ret" type="number" min="7" max="365" value="${esc(app.params.retentionJours)}" ${isAdmin() ? '' : 'disabled'}></label>${isAdmin() ? '<button class="btn" data-act="ret-save">Enregistrer</button><button class="btn ghost" data-act="purge">Nettoyer maintenant</button>' : ''}</div></section>
+  <section class="card"><h2>Archivage mensuel</h2><p class="muted">Chaque mois, les posts <b>publiés</b> du mois écoulé sont rangés dans un fichier ZIP par société (par exemple <code>2026-11_Solar-Bat.zip</code>), puis supprimés de l'application et de la feuille Google, <b>seulement après vérification</b> que le ZIP est bien écrit. Les posts non publiés ne sont jamais archivés ni supprimés.</p>
+  <label>Où ranger les archives<select id="arch-lieu" data-chg="arch-lieu" ${isAdmin() ? '' : 'disabled'}>${Object.entries(Arch.LIEUX).map(([k, v]) => `<option value="${k}" ${app.params.archiveStockage === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+  <p class="muted small">Le dossier « Archives » de chaque société se choisit une fois sur cet ordinateur : Sociétés › Modifier › Dossiers.</p>
+  <div class="row">${canEdit() && FS.supported() ? `<button class="btn" data-act="arch-open" ${app.archItems.length ? '' : 'disabled'}>${app.archItems.length ? 'Archiver ' + esc(Arch.libelle(app.archItems)) : 'Rien à archiver'}</button>` : '<span class="muted small">L\'archivage se fait depuis Chrome ou Edge sur ordinateur.</span>'}</div></section>
   <section class="card"><h2>IA (optionnelle)</h2><p class="muted small">Aucun texte n'est envoyé à une IA sans ton clic. La clé et les réglages restent sur cet ordinateur uniquement.</p>
   <label>Mode<select id="ia-mode">${Object.entries(IA.MODES).map(([k, v]) => `<option value="${k}" ${ia.mode === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
   <div class="two"><label>Clé API Claude<input id="ia-key" type="password" value="${esc(ia.apiKey)}" placeholder="sk-ant-…"></label><label>Modèle Claude<input id="ia-model" value="${esc(ia.apiModel)}"></label></div>
@@ -207,6 +218,7 @@ function viewAide() {
   <li><b>Hors connexion</b> : tu peux consulter et modifier. Tout est envoyé automatiquement au retour du réseau (compteur « en attente » en haut).</li>
   <li><b>Installer sur PC / téléphone</b> : dans Chrome ou Edge, menu ⋮ puis « Installer Pilote Réseaux » (sur iPhone : Partager puis « Sur l'écran d'accueil »).</li>
   <li><b>Dossiers</b> : seulement sur ordinateur (Chrome ou Edge). Le choix du dossier est à refaire une fois sur chaque ordinateur ; ensuite il est mémorisé.</li>
+  <li><b>Archives</b> : le 1er de chaque mois, le logiciel propose « Archiver … ? » sur ordinateur : un ZIP par société est rangé dans le dossier Archives (G: et/ou P:), puis les posts publiés sont retirés de l'application.</li>
   <li><b>Droits</b> : administrateur (tout), modification, lecture seule ; chaque personne peut être limitée à certaines sociétés (écran Accès).</li></ul></section>
   <section class="card"><h2>Ollama (IA locale, optionnelle)</h2><p>Installe Ollama (ollama.com), puis dans une invite de commandes : <code>ollama pull llama3.1</code>. Pour autoriser le logiciel, définis la variable d'environnement <code>OLLAMA_ORIGINS</code> avec l'adresse de ton logiciel, puis relance Ollama. Voir le guide d'installation.</p></section>
   <section class="card"><h2>Besoin d'aide ?</h2><p>Reviens dans une conversation Claude avec le fichier GUIDE-INSTALLATION.md : colle-le et décris l'erreur affichée.</p></section>`;
@@ -223,9 +235,9 @@ function gate() {
 function view() {
   switch (app.route) {
     case 'accueil': return viewAccueil();
-    case 'avalider': return viewSoon('À valider', 'Aperçu de chaque post par réseau (Facebook, Instagram, TikTok…) avec les boutons Valider, Modifier et Refaire.');
-    case 'planning': return viewSoon('Planning', 'Vue de la semaine et des temps forts (fêtes, journées mondiales…) par société.');
-    case 'publier': return viewSoon('Publier', 'Par société et par réseau : télécharger le visuel, copier le texte, ouvrir Meta Business Suite, TikTok Studio ou LinkedIn, et envoyer sur WhatsApp.');
+    case 'avalider': return E.viewAvalider();
+    case 'planning': return E.viewPlanning();
+    case 'publier': return E.viewPublier();
     case 'societes': return viewSocietes();
     case 'acces': return viewAcces();
     case 'reglages': return viewReglages();
@@ -243,6 +255,7 @@ async function refresh() { await loadAll(); if (!$('#modal') && !/INPUT|TEXTAREA
 function go(r) { app.route = r; location.hash = '#/' + r; render(); window.scrollTo(0, 0); }
 
 /* ============================== Actions ============================== */
+const E = createEcrans({ app, esc, toast, copy, canEdit, S, $, $$, refresh: () => refresh(), render: () => render(), go: r => go(r) });
 const A = {
   nav: t => go(t.dataset.r),
   sync: async () => { await S.sync(); await refresh(); },
@@ -284,11 +297,29 @@ const A = {
   'g-del': async t => { const r = structuredClone(app.regles); r.globales = r.globales.filter(x => x.id !== t.dataset.id); await DB.saveDoc('parametres', 'regles', r); await refresh(); S.sync(); },
   'g-save': async () => { const r = structuredClone(app.regles); $$('[data-gid]').forEach(c => { const x = r.globales.find(y => y.id === c.dataset.gid); if (x) x.actif = c.checked; }); await DB.saveDoc('parametres', 'regles', r); await refresh(); toast('Règles enregistrées'); S.sync(); },
   'g-vis-save': async () => { const r = structuredClone(app.regles); r.visibilite = $('#g-vis').value; await DB.saveDoc('parametres', 'regles', r); await refresh(); toast('Enregistré'); S.sync(); },
-  'ret-save': async () => { const n = Math.max(7, Math.min(365, Number($('#ret').value) || 30)); await DB.saveDoc('parametres', 'app', { ...app.params, retentionJours: n }); await refresh(); toast('Enregistré : ' + n + ' jours'); S.sync(); },
-  purge: async () => { if (!confirm(`Supprimer maintenant les posts publiés depuis plus de ${app.params.retentionJours} jours ?`)) return; try { const r = await S.api.purge(app.params.retentionJours); toast(r.purged + ' post(s) supprimé(s)'); await S.sync(); await refresh(); } catch (e) { toast(e.message); } },
+  'arch-lieu': async t => { await DB.saveDoc('parametres', 'app', { ...app.params, archiveStockage: t.value }); await refresh(); toast('Enregistré'); S.sync(); },
+  'arch-open': () => { app.arch = { items: app.archItems.slice(), etape: 'confirm', rapport: [], msg: '' }; renderArch(); },
+  'arch-close': async () => { app.arch = null; renderArch(); await loadAll(); render(); },
+  'arch-run': async () => {
+    const a = app.arch; a.etape = 'run'; renderArch();
+    try { a.rapport = await Arch.archiver(app, a.items, app.params.archiveStockage, true, m => { a.msg = m; renderArch(); }); } catch (e) { a.rapport = [{ societe: { nom: '?' }, mois: '', ok: false, msg: e.message }]; }
+    a.etape = 'fin'; await S.refreshPending(); await loadAll(); renderArch(); S.sync().then(loadAll);
+  },
   'ia-save': () => { IA.saveConf({ mode: $('#ia-mode').value, apiKey: $('#ia-key').value.trim(), apiModel: $('#ia-model').value.trim(), ollamaUrl: $('#ia-ourl').value.trim(), ollamaModel: $('#ia-omodel').value.trim() }); toast('IA enregistrée'); },
   'ia-test': async () => { A['ia-save'](); const out = $('#ia-out'); out.textContent = 'Test…'; try { const s = app.societes[0]; const r = await IA.demander(s ? await IA.brief(s, app.regles) + '\n\nRéponds par OK.' : 'Réponds par OK.'); out.textContent = r.aCopier ? "Mode copier-coller : le texte à coller dans ton chat Claude est prêt (copié)." : 'Réponse : ' + r.texte.slice(0, 200); if (r.aCopier) copy(r.aCopier); } catch (e) { out.textContent = 'Échec : ' + e.message; } },
 };
+
+function renderArch() {
+  const a = app.arch; let m = $('#modal'); if (!a) { m?.remove(); return; }
+  if (!m) { m = document.createElement('div'); m.id = 'modal'; document.body.appendChild(m); }
+  const lieu = Arch.LIEUX[app.params.archiveStockage] || '';
+  const lignes = a.items.map(i => `<li><div><b>${esc(i.societe.nom)}</b> · ${esc(Arch.libelleMois(i.mois))}<div class="muted small">${i.posts.length} post(s) publié(s) → ${esc(i.mois)}_${esc(i.societe.nom.trim().replace(/\s+/g, '-'))}.zip</div></div></li>`).join('');
+  const corps = a.etape === 'confirm' ? `<p>Un ZIP par société et par mois sera écrit dans le dossier Archives (<b>${esc(lieu)}</b>), relu pour vérification, et seulement ensuite les posts seront supprimés de l'application et de la feuille Google.</p><ul class="dos">${lignes}</ul>`
+    : a.etape === 'run' ? `<p>Archivage en cours, ne ferme pas cette fenêtre…</p><p class="muted">${esc(a.msg)}</p>`
+      : `<ul class="dos">${a.rapport.map(r => `<li><div><b>${r.ok ? '✔' : '✖'} ${esc(r.societe.nom)}</b> · ${esc(r.mois ? Arch.libelleMois(r.mois) : '')}<div class="${r.ok ? 'muted' : 'bad'} small">${esc(r.msg)}</div></div></li>`).join('')}</ul>`;
+  m.innerHTML = `<div class="dialog"><header><h2>Archiver ${esc(Arch.libelle(a.items))} ?</h2>${a.etape !== 'run' ? '<button class="btn ghost" data-act="arch-close">✕</button>' : ''}</header><div class="body">${corps}</div>
+    <footer><span></span>${a.etape === 'confirm' ? '<button class="btn" data-act="arch-run">Lancer l\'archivage</button>' : a.etape === 'fin' ? '<button class="btn" data-act="arch-close">Fermer</button>' : ''}</footer></div>`;
+}
 
 async function viewFolder(did) {
   const w = app.wiz, h = await FS.handleOf(w.id, did); if (!h) return toast("Choisis d'abord le dossier sur cet ordinateur");
@@ -300,14 +331,27 @@ async function viewFolder(did) {
   files.forEach((f, i) => { const d = document.createElement('label'); d.className = 'th'; d.dataset.i = i; d.innerHTML = `<div class="ph"></div><input type="checkbox" ${sel.has(f.path) ? 'checked' : ''}><span>${esc(f.name)}</span>`; $('input', d).onchange = ev => { ev.target.checked ? sel.add(f.path) : sel.delete(f.path); localStorage.setItem(key, JSON.stringify([...sel])); }; box.appendChild(d); io.observe(d); });
 }
 
-document.addEventListener('click', e => { const t = e.target.closest('[data-act]'); if (!t || t.tagName === 'INPUT' && t.type === 'file') return; const f = A[t.dataset.act]; if (f) { e.preventDefault(); f(t, e); } });
-document.addEventListener('change', e => { const t = e.target; if (t.matches('input[type=file][data-act]')) A[t.dataset.act]?.(t, e); if (t.classList?.contains('a-all') && t.checked) $$('.a-soc', t.closest('tr')).forEach(c => c.checked = false); if (t.classList?.contains('a-soc') && t.checked) $('.a-all', t.closest('tr')).checked = false; });
+Object.assign(A, E.actions);
+
+document.addEventListener('click', e => { const t = e.target.closest('[data-act]'); if (!t || t.tagName === 'INPUT' && ['file', 'checkbox'].includes(t.type) || t.tagName === 'SELECT') return; const f = A[t.dataset.act]; if (f) { e.preventDefault(); f(t, e); } });
+document.addEventListener('change', e => { const t = e.target; if (t.matches('input[type=file][data-act], input[type=checkbox][data-act]')) A[t.dataset.act]?.(t, e); if (t.matches('select[data-chg]')) A[t.dataset.chg]?.(t, e); if (t.classList?.contains('a-all') && t.checked) $$('.a-soc', t.closest('tr')).forEach(c => c.checked = false); if (t.classList?.contains('a-soc') && t.checked) $('.a-all', t.closest('tr')).checked = false; });
 
 /* ================================ Démarrage ================================ */
+/** Séance 2 : dossiers « Archives » G:/P: pour chaque société ; plus de suppression automatique côté serveur (l'archivage la remplace). */
+async function migrerSeance2() {
+  try {
+    if (!canEdit()) return;
+    let change = (await Arch.ensureArchiveDossiers(app)) > 0;
+    if (isAdmin() && Number(app.params.retentionJours) < 365) { await DB.saveDoc('parametres', 'app', { ...app.params, retentionJours: 365 }); change = true; }
+    if (change) { await S.refreshPending(); await loadAll(); render(); S.sync().then(refresh); }
+  } catch (e) { console.warn('Migration séance 2', e); }
+}
+
 export async function start() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   const h = location.hash.replace('#/', ''); if (NAV.some(n => n[0] === h)) app.route = h;
   await loadAll(); render();
+  await migrerSeance2();
   S.onState(() => { if ($('#modal') || $('#viewer')) return; if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) return; render(); });
   S.onState(async s => { if (s.user && s.user.email !== app.user?.email) { await DB.setMeta('user', s.user); app.user = s.user; } });
   S.setOnLogin(async () => { await loadAll(); render(); S.startAutoSync(refresh); });
