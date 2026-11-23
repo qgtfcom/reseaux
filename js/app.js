@@ -5,9 +5,10 @@ import * as IA from './ia.js';
 import * as Arch from './archive.js';
 import * as Media from './media.js';
 import { createEcrans } from './ecrans.js';
+import { ic } from './icons.js';
 import { NETS, JOURS, STATUTS, ROLES_DOSSIER, POLICES, normalizeSociete, newSocieteId, ensureParametres, importerAncienneAppli, uid } from './model.js';
 
-const VERSION = '1.2.1';
+const VERSION = '1.3.0';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -41,30 +42,37 @@ const copy = async txt => { try { await navigator.clipboard.writeText(txt); toas
 
 /* ================================ Écrans ================================ */
 const NAV = [
-  ['accueil', 'Accueil', '🏠'], ['avalider', 'À valider', '✅'], ['planning', 'Planning', '📅'], ['publier', 'Publier', '🚀'],
-  ['societes', 'Sociétés', '🏢'], ['acces', 'Accès', '🔑'], ['reglages', 'Réglages', '⚙️'], ['aide', 'Aide', '❓'],
+  ['accueil', 'Accueil', 'home'], ['avalider', 'À valider', 'circle-check'], ['planning', 'Planning', 'calendar'], ['publier', 'Publier', 'send'],
+  ['societes', 'Sociétés', 'building'], ['acces', 'Accès', 'key'], ['reglages', 'Réglages', 'sliders'], ['aide', 'Aide', 'help'],
 ];
+/* thème clair / sombre et menu replié : mémorisés sur cet appareil */
+const theme = () => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+function setTheme(t) { document.documentElement.dataset.theme = t; try { localStorage.setItem('pr.theme', t); } catch {} const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = t === 'dark' ? '#171411' : '#faf8f5'; }
+const collapsed = () => { try { return localStorage.getItem('pr.side') === '1'; } catch { return false; } };
+const FAB = { planning: ['ev-add', 'Événement', () => canEdit()], societes: ['soc-new', 'Société', () => isAdmin()] };
 
 function shell(inner) {
   const st = S.state;
   const nav = NAV.filter(n => n[0] !== 'acces' || isAdmin()).map(([k, l, i]) =>
-    `<button class="nav ${app.route === k ? 'on' : ''}" data-act="nav" data-r="${k}"><span class="ic">${i}</span><span>${l}</span></button>`).join('');
+    `<button class="nav ${app.route === k ? 'on' : ''}" data-act="nav" data-r="${k}" title="${l}"><span class="ic">${ic(i)}</span><span class="lb">${l}</span></button>`).join('');
   const pend = st.pending ? `<span class="chip warn">${st.pending} en attente</span>` : '';
   const net = st.online ? '<span class="chip ok">En ligne</span>' : '<span class="chip off">Hors connexion</span>';
   const user = app.user ? `${esc(app.user.email || S.savedEmail())} · ${esc(app.user.role)}` : esc(S.savedEmail());
-  return `<div class="layout"><aside class="side"><div class="brand">Pilote Réseaux</div><nav>${nav}</nav>
-    <div class="who">${user}</div></aside>
+  const f = FAB[app.route], fab = f && f[2]() ? `<button class="btn fab" data-act="${f[0]}">${ic('plus')}<span>${f[1]}</span></button>` : '';
+  return `<div class="layout ${collapsed() ? 'collapsed' : ''}"><aside class="side"><div class="brand"><span class="logo-b">${ic('send', 18)}</span><span class="t">Pilote Réseaux</span></div><nav>${nav}</nav>
+    <div class="sidefoot"><button class="nav" data-act="side-toggle" title="Replier le menu"><span class="ic">${ic('panel')}</span><span class="lb">Replier</span></button><div class="who">${user}</div></div></aside>
     <main class="main"><header class="top"><div class="statusbar">${net}${pend}${st.syncing ? '<span class="chip">Synchronisation…</span>' : (st.lastSync ? `<span class="chip">Synchro ${fmtTime(st.lastSync)}</span>` : '')}</div>
-    <button class="btn ghost" data-act="sync">↻ Synchroniser</button></header>
+    <div class="row"><button class="btn ghost iconbtn" data-act="theme" title="Mode clair / sombre" aria-label="Basculer clair / sombre">${ic(theme() === 'dark' ? 'sun' : 'moon')}</button>
+    <button class="btn ghost ${st.syncing ? 'loading' : ''}" data-act="sync">${ic('refresh', 18)}<span>Synchroniser</span></button></div></header>
     ${bandeauArchive()}
     ${st.error ? `<div class="banner bad">${esc(st.error)} <span id="gbtn-inline"></span></div>` : ''}
-    <div class="content">${inner}</div></main></div>`;
+    <div class="content">${inner}</div>${fab}</main></div>`;
 }
 
 function bandeauArchive() {
   if (!app.archItems.length || !canEdit() || !FS.supported()) return '';
   const n = app.archItems.reduce((t, i) => t + i.posts.length, 0);
-  return `<div class="banner warn">📦 <b>Archiver ${esc(Arch.libelle(app.archItems))} ?</b> ${n} post(s) publié(s) à ranger en ZIP par société. <button class="btn sm" data-act="arch-open">Archiver</button></div>`;
+  return `<div class="banner warn">${ic('box')} <b>Archiver ${esc(Arch.libelle(app.archItems))} ?</b> ${n} post(s) publié(s) à ranger en ZIP par société. <button class="btn sm" data-act="arch-open">Archiver</button></div>`;
 }
 
 function viewAccueil() {
@@ -83,7 +91,7 @@ function viewAccueil() {
     const ps = app.posts.filter(p => p.entrepriseId === sc.id), n = f => ps.filter(f).length;
     const b = (k, st, bg, fg, v, l) => `<button data-act="tile-go" data-s="${esc(sc.id)}" data-st="${st}" style="background:${bg};color:${fg}"><span class="n">${v}</span><span class="l">${l}</span></button>`;
     return `<article class="soctile" style="--c:${esc(sc.couleur)}"><h2>${esc(sc.nom)}</h2><div class="mini">
-      ${b('', 'a_valider', '#e6ebff', '#2f54eb', n(p => p.statut === 'a_valider'), 'À valider')}${b('', 'pret', '#e2f5ec', '#16935a', n(p => p.statut === 'pret'), 'Validés')}${b('', 'passe', '#fff1de', '#b86e00', n(p => p.statut !== 'publie' && p.date && p.date < today), 'Dates passées')}</div>
+      ${b('', 'a_valider', 'var(--accent-soft)', 'var(--accent)', n(p => p.statut === 'a_valider'), 'À valider')}${b('', 'pret', 'var(--ok-soft)', 'var(--ok)', n(p => p.statut === 'pret'), 'Validés')}${b('', 'passe', 'var(--hot-soft)', 'var(--hot)', n(p => p.statut !== 'publie' && p.date && p.date < today), 'Dates passées')}</div>
       <p class="muted small" style="margin:10px 0 0">${n(p => p.media?.fichiers?.length)} post(s) avec média · ${n(p => p.statut === 'publie')} publié(s)</p></article>`;
   }).join('');
   return `<h1>Bienvenue</h1>
@@ -264,12 +272,14 @@ function render() {
   if (app.route === 'acces' && isAdmin() && !app.acces && !app._loadingAcces) { app._loadingAcces = true; loadAcces().finally(() => app._loadingAcces = false); }
 }
 async function refresh() { await loadAll(); if (!$('#modal') && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) render(); }
-function go(r) { app.route = r; location.hash = '#/' + r; render(); window.scrollTo(0, 0); }
+function go(r) { app.route = r; location.hash = '#/' + r; render(); $('.content')?.classList.add('enter'); window.scrollTo(0, 0); }
 
 /* ============================== Actions ============================== */
 const E = createEcrans({ app, esc, toast, copy, canEdit, S, $, $$, refresh: () => refresh(), render: () => render(), go: r => go(r) });
 const A = {
   nav: t => go(t.dataset.r),
+  theme: () => { setTheme(theme() === 'dark' ? 'light' : 'dark'); render(); },
+  'side-toggle': () => { try { localStorage.setItem('pr.side', collapsed() ? '0' : '1'); } catch {} render(); },
   'tile-go': t => { app.ui.filtre = t.dataset.s; app.ui.statut = t.dataset.st; app.ui.focus = null; go('avalider'); },
   sync: async () => { await S.sync(); await refresh(); },
   'set-save': async () => { const u = $('#set-url').value.trim(), c = $('#set-cid').value.trim(); if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)) return toast("L'adresse du script doit se terminer par /exec"); if (!/\.apps\.googleusercontent\.com$/.test(c)) return toast("L'identifiant client doit se terminer par .apps.googleusercontent.com"); S.cfg.set(u, c); await S.initAuth().catch(() => {}); toast('Enregistré'); render(); },
@@ -362,7 +372,15 @@ async function migrerSeance2() {
   } catch (e) { console.warn('Migration séance 2', e); }
 }
 
+function ripple(e) {
+  const b = e.target.closest?.('.btn'); if (!b || b.disabled) return;
+  const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 2, x = document.createElement('span');
+  x.className = 'rip'; x.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
+  b.appendChild(x); setTimeout(() => x.remove(), 520);
+}
+
 export async function start() {
+  document.addEventListener('pointerdown', ripple, { passive: true });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   const h = location.hash.replace('#/', ''); if (NAV.some(n => n[0] === h)) app.route = h;
   await loadAll(); render();

@@ -5,6 +5,7 @@ import { NETS, STATUTS, JOURS, uid } from './model.js';
 import { iso, addDays, monday, eventsIn } from './events.js';
 import * as FS from './fs.js';
 import * as M from './media.js';
+import { ic } from './icons.js';
 
 const urlOk = u => typeof u === 'string' && /^(https?:|data:|blob:)/i.test(u);
 const QUICK = ['Plus court', 'Plus percutant', 'Plus pro', 'Ajouter la promo', "Moins d'emojis"];
@@ -60,14 +61,14 @@ export function createEcrans(c) {
   function carte(p) {
     const n = netOf(p), ed = ui.editing === p.id, id = esc(p.id);
     const boutons = !canEdit() ? '' : p.statut === 'a_valider'
-      ? `<div class="actions"><button class="btn big ok" data-act="av-valider" data-id="${id}">✓ Valider</button><button class="btn ghost" data-act="av-edit" data-id="${id}">✎ Modifier / refaire</button></div>`
-      : p.statut === 'pret' ? `<div class="actions"><button class="btn ghost" data-act="av-annuler" data-id="${id}">Annuler la validation</button><button class="btn ghost" data-act="av-edit" data-id="${id}">✎ Modifier / refaire</button></div>`
-        : p.statut === 'publie' ? '' : `<div class="actions"><button class="btn ghost" data-act="av-edit" data-id="${id}">✎ Modifier / refaire</button></div>`;
-    const bmedia = canEdit() && p.statut !== 'publie' ? `<div class="actions"><button class="btn ghost" data-act="med-open" data-id="${id}">📎 ${aMedia(p) ? 'Changer le média' : 'Rattacher un média'}</button>${aMedia(p) ? `<button class="btn ghost danger" data-act="med-retirer" data-id="${id}">Retirer</button>` : ''}</div>` : '';
+      ? `<div class="actions"><button class="btn big ok" data-act="av-valider" data-id="${id}">${ic('check',18)} Valider</button><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>`
+      : p.statut === 'pret' ? `<div class="actions"><button class="btn ghost" data-act="av-annuler" data-id="${id}">Annuler la validation</button><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>`
+        : p.statut === 'publie' ? '' : `<div class="actions"><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>`;
+    const bmedia = canEdit() && p.statut !== 'publie' ? `<div class="actions"><button class="btn ghost" data-act="med-open" data-id="${id}">${ic('clip',16)} ${aMedia(p) ? 'Changer le média' : 'Rattacher un média'}</button>${aMedia(p) ? `<button class="btn ghost danger" data-act="med-retirer" data-id="${id}">Retirer</button>` : ''}</div>` : '';
     const passe = estPasse(p), sc = soc(p.entrepriseId);
-    const bsuppr = canEdit() && p.statut !== 'publie' ? `<div class="actions one"><button class="btn ghost danger" data-act="av-suppr" data-id="${id}">🗑 Supprimer ce post${aMedia(p) ? ' et sa vidéo' : ''}</button></div>` : '';
+    const bsuppr = canEdit() && p.statut !== 'publie' ? `<div class="actions one"><button class="btn ghost danger" data-act="av-suppr" data-id="${id}">${ic('trash',16)} Supprimer ce post${aMedia(p) ? ' et sa vidéo' : ''}</button></div>` : '';
     return `<article class="review ${passe ? 'passe' : ''}" id="r-${id}" style="--sc:${esc(sc?.couleur || '#2f54eb')}"><div class="band"></div>${apercu(p)}
-      <div class="sideact"><div class="meta">${pill(p)}${passe ? '<span class="pill late">⏰ Date passée</span>' : ''}<span class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</span>${reseaux(p)}</div>
+      <div class="sideact"><div class="meta">${pill(p)}${passe ? `<span class="pill late">${ic('clock',14)} Date passée</span>` : ''}<span class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</span>${reseaux(p)}</div>
       <h3>${esc(p.titre)}</h3>
       ${p.statut === 'a_refaire' && p.demande ? `<div class="why"><b>Ta demande :</b> ${esc(p.demande)}</div>` : ''}
       ${boutons}${bmedia}${bsuppr}
@@ -82,14 +83,14 @@ export function createEcrans(c) {
   }
   function viewAvalider() {
     const base = visibles(), nb = s => base.filter(p => p.statut === s).length, nbPasse = base.filter(estPasse).length;
-    const tuiles = [['a_valider', '✅', 'À valider', nb('a_valider'), 'blue'], ['a_refaire', '🔁', 'À refaire', nb('a_refaire'), 'red'], ['pret', '👍', 'Validés', nb('pret'), 'green'], ['passe', '⏰', 'Dates passées', nbPasse, 'orange'], ['tous', '🗂', 'Tous', base.filter(p => p.statut !== 'publie').length, 'grey']]
-      .map(([k, ic, l, n, c]) => `<button class="tile t-${c} ${ui.statut === k && !ui.focus ? 'on' : ''}" data-act="av-statut" data-s="${k}"><span class="ti">${ic}</span><span class="tn">${n}</span><span class="tl">${l}</span></button>`).join('');
+    const tuiles = [['a_valider', 'circle-check', 'À valider', nb('a_valider'), 'blue'], ['a_refaire', 'redo', 'À refaire', nb('a_refaire'), 'red'], ['pret', 'thumb', 'Validés', nb('pret'), 'green'], ['passe', 'clock', 'Dates passées', nbPasse, 'orange'], ['tous', 'layers', 'Tous', base.filter(p => p.statut !== 'publie').length, 'grey']]
+      .map(([k, icn, l, n, c]) => `<button class="tile t-${c} ${ui.statut === k && !ui.focus ? 'on' : ''}" data-act="av-statut" data-s="${k}"><span class="ti">${ic(icn,20)}</span><span class="tn">${n}</span><span class="tl">${l}</span></button>`).join('');
     const liste = base.filter(p => ui.focus ? p.id === ui.focus : ui.statut === 'passe' ? estPasse(p) : (ui.statut === 'tous' ? p.statut !== 'publie' : p.statut === ui.statut)).sort(tri);
-    const vide = { a_valider: 'Rien à valider pour le moment. 🎉', passe: 'Aucun post en retard. 👌' }[ui.statut] || 'Aucun post dans cette liste.';
-    const nettoyer = !ui.focus && ui.statut === 'passe' && liste.length && canEdit() ? `<div class="banner warn">⏰ ${liste.length} post(s) ont une date déjà passée sans avoir été publiés. <button class="btn sm ghost danger" data-act="av-suppr-passes">🗑 Tout supprimer</button> <span class="muted small">(les fichiers restent dans tes dossiers)</span></div>` : '';
-    return `<div class="row between"><h1>À valider</h1><div class="row">${canEdit() && FS.supported() && base.some(p => !aMedia(p) && p.statut !== 'publie') ? `<button class="btn ghost" data-act="med-auto">📎 Rattacher automatiquement les médias (${base.filter(p => !aMedia(p) && p.statut !== 'publie').length})</button>` : ''}${filtreHtml()}</div></div>
-      ${ui.focus ? '<p><button class="btn ghost" data-act="av-retour">← Retour à la liste</button></p>' : `<div class="tiles">${tuiles}</div>`}
-      ${nettoyer}${liste.map(carte).join('') || `<section class="card"><p>${vide}</p></section>`}`;
+    const vide = { a_valider: 'Rien à valider pour le moment.', passe: 'Aucun post en retard.' }[ui.statut] || 'Aucun post dans cette liste.';
+    const nettoyer = !ui.focus && ui.statut === 'passe' && liste.length && canEdit() ? `<div class="banner warn">${ic('clock',18)} ${liste.length} post(s) ont une date déjà passée sans avoir été publiés. <button class="btn sm ghost danger" data-act="av-suppr-passes">${ic('trash',16)} Tout supprimer</button> <span class="muted small">(les fichiers restent dans tes dossiers)</span></div>` : '';
+    return `<div class="row between"><h1>À valider</h1><div class="row">${canEdit() && FS.supported() && base.some(p => !aMedia(p) && p.statut !== 'publie') ? `<button class="btn ghost" data-act="med-auto">${ic('clip',16)} Rattacher automatiquement les médias (${base.filter(p => !aMedia(p) && p.statut !== 'publie').length})</button>` : ''}${filtreHtml()}</div></div>
+      ${ui.focus ? `<p><button class="btn ghost" data-act="av-retour">${ic('back',16)} Retour à la liste</button></p>` : `<div class="tiles">${tuiles}</div>`}
+      ${nettoyer}${liste.map(carte).join('') || `<section class="card vide"><span class="vi">${ic('inbox',28)}</span><b>${vide}</b></section>`}`;
   }
 
   /* ============================== PLANNING ============================== */
