@@ -79,8 +79,9 @@ export function createEcrans(c) {
         <div class="row"><button class="btn" data-act="av-save" data-id="${id}">Enregistrer mes changements</button></div>
         <label>Ce qui ne va pas<textarea id="dem-${id}" rows="3" placeholder="Ex. texte plus court, ton plus fun, autre photo, mettre la promo en avant…"></textarea></label>
         <div class="quick">${QUICK.map(q => `<button class="btn sm ghost" data-act="av-quick" data-id="${id}" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
-        <div class="row"><button class="btn ghost" data-act="av-ia" data-id="${id}">Réécrire le texte avec Claude</button><button class="btn" data-act="av-refaire" data-id="${id}">À refaire (visuel ou vidéo)</button></div>
-        <p class="muted small">« À refaire » met le post en attente de reprise et mémorise ta demande pour ne plus refaire la même erreur. Le nouveau visuel ou la nouvelle vidéo sera produit à la séance 3.</p></div>` : ''}</div></article>`;
+        <div class="row"><button class="btn ghost" data-act="av-ia" data-id="${id}">Réécrire le texte avec Claude</button><button class="btn ghost" data-act="av-refaire" data-id="${id}">À refaire (mémoriser)</button></div>
+        <div class="row"><button class="btn" data-act="av-fab" data-id="${id}">${ic('send',16)} Refaire la vidéo ou le visuel : copier la demande pour Claude</button></div>
+        <p class="muted small">Le logiciel ne fabrique pas les vidéos lui-même. « Copier la demande » met le post en « À refaire », garde ta demande en mémoire et copie un message complet (post, fichiers actuels, règles, ce qui ne va pas). Colle-le dans la conversation Claude de fabrication, celle qui est reliée à ton PC : Claude refait le média et le range sous le même nom, et il se rattache seul.</p></div>` : ''}</div></article>`;
   }
   function viewAvalider() {
     const base = visibles(), nb = s => base.filter(p => p.statut === s).length, nbPasse = base.filter(estPasse).length;
@@ -184,6 +185,16 @@ export function createEcrans(c) {
       ui.editing = null; c.render(); toast('Modifications enregistrées');
     },
     'av-quick': t => { const ta = $('#dem-' + t.dataset.id); ta.value = (ta.value.trim() + ' ' + t.dataset.q + '.').trim(); },
+    'av-fab': async t => {
+      const id = t.dataset.id, p = P(id), s = soc(p.entrepriseId), dem = ($('#dem-' + id)?.value || '').trim();
+      if (!dem) return toast('Écris d\'abord ce qui ne va pas dans la vidéo ou le visuel');
+      const fich = (p.media?.fichiers || []).map(f => '- ' + f.nom).join('\n') || '- (aucun média rattaché)';
+      const msg = `DEMANDE DE FABRICATION (Pilote Réseaux)\nRefais le média de ce post et range-le dans le dossier de la société sur mon PC, sous le même nom de fichier pour qu'il se rattache seul (nom : Société - AAAA-MM-JJ - Titre - Réseau.ext).\n\nSociété : ${s?.nom}\nPost : ${p.titre}\nDate : ${p.date} à ${p.heure || '?'}\nRéseaux : ${(p.reseaux || []).join(', ')}\nFichiers actuels :\n${fich}\n\nCe qui ne va pas / ce que je veux : ${dem}\n\n` + (await IA.brief(s, app.regles));
+      const { id: sid, ...sd } = s;
+      await DB.saveDoc('entreprises', sid, { ...sd, retours: [...(s.retours || []), { date: iso(new Date()), type: 'refaire', texte: `${p.titre} : ${dem}` }].slice(-60), majLe: new Date().toISOString() });
+      await savePost(id, { statut: 'a_refaire', demande: dem }); await copy(msg); ui.editing = null; c.render();
+      toast('Demande copiée : colle-la dans la conversation Claude de fabrication (reliée à ton PC).', 7000);
+    },
     'av-refaire': async t => {
       const id = t.dataset.id, p = P(id), dem = ($('#dem-' + id).value || '').trim();
       if (!dem) return toast('Écris d\'abord ce qui ne va pas');
