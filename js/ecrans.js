@@ -69,7 +69,7 @@ export function createEcrans(c) {
     const passe = estPasse(p), sc = soc(p.entrepriseId);
     const bsuppr = canEdit() && p.statut !== 'publie' ? `<div class="actions one"><button class="btn ghost danger" data-act="av-suppr" data-id="${id}">${ic('trash',16)} Supprimer ce post${aMedia(p) ? ' et sa vidéo' : ''}</button></div>` : '';
     return `<article class="review ${passe ? 'passe' : ''}" id="r-${id}" style="--sc:${esc(sc?.couleur || '#2f54eb')}"><div class="band"></div>${apercu(p)}
-      <div class="sideact"><div class="meta">${pill(p)}${passe ? `<span class="pill late">${ic('clock',14)} Date passée</span>` : ''}<span class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</span>${reseaux(p)}</div>
+      <div class="sideact"><div class="meta">${pill(p)}${passe ? `<span class="pill late">${ic('clock',14)} Date passée</span>${canEdit() ? `<button class="btn sm ok" data-act="av-publie" data-id="${id}">${ic('check',14)} Déjà publié</button>` : ''}` : ''}<span class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</span>${reseaux(p)}</div>
       <h3>${esc(p.titre)}</h3>
       ${p.statut === 'a_refaire' && p.demande ? `<div class="why"><b>Ta demande :</b> ${esc(p.demande)}</div>` : ''}
       ${boutons}${bmedia}${bsuppr}
@@ -89,7 +89,7 @@ export function createEcrans(c) {
       .map(([k, icn, l, n, c]) => `<button class="tile t-${c} ${ui.statut === k && !ui.focus ? 'on' : ''}" data-act="av-statut" data-s="${k}"><span class="ti">${ic(icn,20)}</span><span class="tn">${n}</span><span class="tl">${l}</span></button>`).join('');
     const liste = base.filter(p => ui.focus ? p.id === ui.focus : ui.statut === 'passe' ? estPasse(p) : (ui.statut === 'tous' ? p.statut !== 'publie' : p.statut === ui.statut)).sort(tri);
     const vide = { a_valider: 'Rien à valider pour le moment.', passe: 'Aucun post en retard.' }[ui.statut] || 'Aucun post dans cette liste.';
-    const nettoyer = !ui.focus && ui.statut === 'passe' && liste.length && canEdit() ? `<div class="banner warn">${ic('clock',18)} ${liste.length} post(s) ont une date déjà passée sans avoir été publiés. <button class="btn sm ghost danger" data-act="av-suppr-passes">${ic('trash',16)} Tout supprimer</button> <span class="muted small">(les fichiers restent dans tes dossiers)</span></div>` : '';
+    const nettoyer = !ui.focus && ui.statut === 'passe' && liste.length && canEdit() ? `<div class="banner warn">${ic('clock',18)} ${liste.length} post(s) ont une date déjà passée sans être marqués comme publiés. <button class="btn sm ok" data-act="av-publie-tous">${ic('check',16)} Tout marquer comme publié</button> <button class="btn sm ghost danger" data-act="av-suppr-passes">${ic('trash',16)} Tout supprimer</button> <span class="muted small">(les fichiers restent dans tes dossiers)</span></div>` : '';
     return `<div class="row between"><h1>À valider</h1><div class="row">${canEdit() && FS.supported() && base.some(p => !aMedia(p) && p.statut !== 'publie') ? `<button class="btn ghost" data-act="med-auto">${ic('clip',16)} Rattacher automatiquement les médias (${base.filter(p => !aMedia(p) && p.statut !== 'publie').length})</button>` : ''}${filtreHtml()}</div></div>
       ${ui.focus ? `<p><button class="btn ghost" data-act="av-retour">${ic('back',16)} Retour à la liste</button></p>` : `<div class="tiles">${tuiles}</div>`}
       ${nettoyer}${liste.map(carte).join('') || `<section class="card vide"><span class="vi">${ic('inbox',28)}</span><b>${vide}</b></section>`}`;
@@ -171,6 +171,16 @@ export function createEcrans(c) {
       const p = P(t.dataset.id); if (!p) return;
       if (!confirm(`Supprimer le post « ${p.titre} » ?${aMedia(p) ? '\n\nLa vidéo / les images rattachées sont retirées du post ; les fichiers restent dans tes dossiers.' : ''}`)) return;
       await DB.removeDoc('posts', p.id); await S.refreshPending(); ui.editing = null; ui.focus = null; await c.refresh(); toast('Post supprimé'); S.sync().then(c.refresh);
+    },
+    'av-publie': async t => {
+      const p = P(t.dataset.id), faits = Object.fromEntries([...netsDe(p), 'whatsapp'].map(n => [n, true]));
+      await savePost(p.id, { faits: { ...(p.faits || {}), ...faits }, statut: 'publie', publieLe: new Date().toISOString() }); toast('Marqué comme publié : il sort de « Dates passées »');
+    },
+    'av-publie-tous': async () => {
+      const l = visibles().filter(estPasse); if (!l.length) return;
+      if (!confirm(`Marquer ces ${l.length} post(s) comme déjà publiés ?\n\n${l.slice(0, 12).map(p => '• ' + p.titre).join('\n')}${l.length > 12 ? '\n…' : ''}`)) return;
+      for (const p of l) await savePost(p.id, { faits: Object.fromEntries(netsDe(p).map(n => [n, true])), statut: 'publie', publieLe: new Date().toISOString() });
+      toast(l.length + ' post(s) marqué(s) comme publiés');
     },
     'av-suppr-passes': async () => {
       const l = visibles().filter(estPasse); if (!l.length) return;

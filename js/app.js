@@ -8,7 +8,7 @@ import { createEcrans } from './ecrans.js';
 import { ic } from './icons.js';
 import { NETS, JOURS, STATUTS, ROLES_DOSSIER, POLICES, normalizeSociete, newSocieteId, ensureParametres, importerAncienneAppli, uid } from './model.js';
 
-const VERSION = '1.3.5';
+const VERSION = '1.3.6';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
