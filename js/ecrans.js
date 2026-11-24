@@ -194,7 +194,7 @@ export function createEcrans(c) {
       const doss = (s?.dossiers || []).map(d => `- ${d.role || 'dossier'} : ${d.indic || d.nom}`).join('\n') || '- (aucun dossier renseigné)';
       const msg = `DEMANDE DE FABRICATION : REFAIRE UN MÉDIA EXISTANT (Pilote Réseaux)
 
-À LIRE D'ABORD. C'est un vrai montage à refaire avec MES fichiers sur MON PC, pas un dessin, pas une illustration, pas un artefact, pas une animation inventée. Si tu n'as pas accès à mon PC dans cette conversation, dis-le tout de suite et arrête-toi (ne dessine rien à la place).
+À LIRE D'ABORD. Ne repars pas de zéro : lis d'abord "Documents\\QG Tfcom\\Reseaux\\recettes\\README.md" puis la recette de ce post ("recettes\\recettes\\<nom du post>.json") : elle contient les photos, textes, durées, musique et le script déjà prêt à relancer ("recettes\\code"). Ne change que ce que je demande, puis mets la recette à jour. C'est un vrai montage à refaire avec MES fichiers sur MON PC, pas un dessin, pas une illustration, pas un artefact, pas une animation inventée. Si tu n'as pas accès à mon PC dans cette conversation, dis-le tout de suite et arrête-toi (ne dessine rien à la place).
 
 Étapes :
 1. Ouvre le média existant ci-dessous (sur mon PC) et regarde-le : extrais des images de la vidéo (ou ouvre les images du carrousel) pour voir ce qui existe.
