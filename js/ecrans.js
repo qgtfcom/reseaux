@@ -81,7 +81,7 @@ export function createEcrans(c) {
         <div class="quick">${QUICK.map(q => `<button class="btn sm ghost" data-act="av-quick" data-id="${id}" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
         <div class="row"><button class="btn ghost" data-act="av-ia" data-id="${id}">Réécrire le texte avec Claude</button><button class="btn ghost" data-act="av-refaire" data-id="${id}">À refaire (mémoriser)</button></div>
         <div class="row"><button class="btn" data-act="av-fab" data-id="${id}">${ic('send',16)} Refaire la vidéo ou le visuel : copier la demande pour Claude</button></div>
-        <p class="muted small">Le logiciel ne fabrique pas les vidéos lui-même. « Copier la demande » met le post en « À refaire », garde ta demande en mémoire et copie un message complet (post, fichiers actuels, règles, ce qui ne va pas). Colle-le dans la conversation Claude de fabrication, celle qui est reliée à ton PC : Claude refait le média et le range sous le même nom, et il se rattache seul.</p></div>` : ''}</div></article>`;
+        <p class="muted small">Le logiciel ne fabrique pas les vidéos lui-même. « Copier la demande » met le post en « À refaire », garde ta demande en mémoire et copie un message complet (post, fichiers actuels, règles, ce qui ne va pas). Colle-le dans la conversation Claude de fabrication, celle qui est reliée à ton PC. Le message lui demande d'ouvrir ta vidéo actuelle, de reprendre tes vraies photos et rushes, de ne rien dessiner, puis de ranger la nouvelle version sous le même nom.</p></div>` : ''}</div></article>`;
   }
   function viewAvalider() {
     const base = visibles(), nb = s => base.filter(p => p.statut === s).length, nbPasse = base.filter(estPasse).length;
@@ -189,7 +189,36 @@ export function createEcrans(c) {
       const id = t.dataset.id, p = P(id), s = soc(p.entrepriseId), dem = ($('#dem-' + id)?.value || '').trim();
       if (!dem) return toast('Écris d\'abord ce qui ne va pas dans la vidéo ou le visuel');
       const fich = (p.media?.fichiers || []).map(f => '- ' + f.nom).join('\n') || '- (aucun média rattaché)';
-      const msg = `DEMANDE DE FABRICATION (Pilote Réseaux)\nRefais le média de ce post et range-le dans le dossier de la société sur mon PC, sous le même nom de fichier pour qu'il se rattache seul (nom : Société - AAAA-MM-JJ - Titre - Réseau.ext).\n\nSociété : ${s?.nom}\nPost : ${p.titre}\nDate : ${p.date} à ${p.heure || '?'}\nRéseaux : ${(p.reseaux || []).join(', ')}\nFichiers actuels :\n${fich}\n\nCe qui ne va pas / ce que je veux : ${dem}\n\n` + (await IA.brief(s, app.regles));
+      const nomsFich = (p.media?.fichiers || []).map(f => f.nom);
+      const vids = nomsFich.filter(n => /\.(mp4|mov|m4v)$/i.test(n)), imgs = nomsFich.filter(n => /\.(jpe?g|png|webp)$/i.test(n));
+      const doss = (s?.dossiers || []).map(d => `- ${d.role || 'dossier'} : ${d.indic || d.nom}`).join('\n') || '- (aucun dossier renseigné)';
+      const msg = `DEMANDE DE FABRICATION : REFAIRE UN MÉDIA EXISTANT (Pilote Réseaux)
+
+À LIRE D'ABORD. C'est un vrai montage à refaire avec MES fichiers sur MON PC, pas un dessin, pas une illustration, pas un artefact, pas une animation inventée. Si tu n'as pas accès à mon PC dans cette conversation, dis-le tout de suite et arrête-toi (ne dessine rien à la place).
+
+Étapes :
+1. Ouvre le média existant ci-dessous (sur mon PC) et regarde-le : extrais des images de la vidéo (ou ouvre les images du carrousel) pour voir ce qui existe.
+2. Retrouve les photos et vidéos d'origine (rushes) dans mes dossiers : ce sont elles qu'on utilise. Aucune image générée, aucun faux avant/après, rien qui se fasse passer pour un vrai chantier. Si le thème n'a aucune photo ou vidéo réelle, tu crées un média clairement graphique (texte et motion design), jamais présenté comme un vrai chantier.
+3. Garde ce qui allait, change uniquement ce que je demande ci-dessous.
+4. Teste le résultat (durée, texte lisible, images extraites de la nouvelle vidéo), puis écris le fichier dans mon dossier, sous le MÊME nom que l'ancien pour qu'il se rattache seul au post. Garde l'ancien en copie « (ancienne version) ».
+
+Société : ${s?.nom}
+Post : ${p.titre}
+Date : ${p.date} à ${p.heure || '?'}   Réseaux : ${(p.reseaux || []).join(', ')}
+Vidéo(s) actuelle(s) à refaire :
+${vids.map(n => '- ' + n).join('\n') || '- (aucune vidéo rattachée)'}
+Images actuelles (carrousel / Stories) :
+${imgs.map(n => '- ' + n).join('\n') || '- (aucune)'}
+Mes dossiers sur le PC (l'enregistrement = là où le média refait doit être écrit ; musiques = choisis un morceau et un passage différents des vidéos précédentes) :
+${doss}
+Légende actuelle : ${(p.textes?.[netOf(p)] || '').slice(0, 600) || '(vide)'}
+
+CE QUI NE VA PAS / CE QUE JE VEUX :
+${dem}
+
+Format et règles techniques : vidéo verticale 1080x1920, textes toujours en bas de l'écran (jamais de cadre), pas de visages de face, musique à volume bas avec fondu entrée/sortie, fichier mp4 H.264 + AAC.
+
+` + (await IA.brief(s, app.regles));
       const { id: sid, ...sd } = s;
       await DB.saveDoc('entreprises', sid, { ...sd, retours: [...(s.retours || []), { date: iso(new Date()), type: 'refaire', texte: `${p.titre} : ${dem}` }].slice(-60), majLe: new Date().toISOString() });
       await savePost(id, { statut: 'a_refaire', demande: dem }); await copy(msg); ui.editing = null; c.render();
