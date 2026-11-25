@@ -37,7 +37,7 @@ export function createEcrans(c) {
 
   /* ============================== À VALIDER ============================== */
   const aMedia = p => !!(p.media?.fichiers?.length);
-  const estPasse = p => p.statut !== 'publie' && !!p.date && p.date < iso(new Date());
+  const estPasse = p => p.statut !== 'publie' && p.statut !== 'idee' && !!p.date && p.date < iso(new Date());
   function mediaLocal(p) {
     const m = p.media, f = m.fichiers, kind = m.kind || 'image', s = f.filter(x => x.role === 'story'), sl = f.filter(x => x.role === 'slide'), vi = f.filter(x => x.type === 'video');
     const cible = kind === 'video' ? [(vi[0] || f[0]).nom] : kind === 'carousel' ? sl.map(x => x.nom) : [(f.find(x => x.type === 'image' && x.role === 'principal') || f[0]).nom];
@@ -90,7 +90,7 @@ export function createEcrans(c) {
     const liste = base.filter(p => ui.focus ? p.id === ui.focus : ui.statut === 'passe' ? estPasse(p) : (ui.statut === 'tous' ? p.statut !== 'publie' : p.statut === ui.statut)).sort(tri);
     const vide = { a_valider: 'Rien à valider pour le moment.', passe: 'Aucun post en retard.' }[ui.statut] || 'Aucun post dans cette liste.';
     const nettoyer = !ui.focus && ui.statut === 'passe' && liste.length && canEdit() ? `<div class="banner warn">${ic('clock',18)} ${liste.length} post(s) ont une date déjà passée sans être marqués comme publiés. <button class="btn sm ok" data-act="av-publie-tous">${ic('check',16)} Tout marquer comme publié</button> <button class="btn sm ghost danger" data-act="av-suppr-passes">${ic('trash',16)} Tout supprimer</button> <span class="muted small">(les fichiers restent dans tes dossiers)</span></div>` : '';
-    return `<div class="row between"><h1>À valider</h1><div class="row">${canEdit() && FS.supported() && base.some(p => !aMedia(p) && p.statut !== 'publie') ? `<button class="btn ghost" data-act="med-auto">${ic('clip',16)} Rattacher automatiquement les médias (${base.filter(p => !aMedia(p) && p.statut !== 'publie').length})</button>` : ''}${filtreHtml()}</div></div>
+    return `<div class="row between"><h1>À valider</h1><div class="row">${canEdit() && FS.supported() && base.some(p => !aMedia(p) && !['publie', 'idee'].includes(p.statut)) ? `<button class="btn ghost" data-act="med-auto">${ic('clip',16)} Rattacher automatiquement les médias (${base.filter(p => !aMedia(p) && !['publie', 'idee'].includes(p.statut)).length})</button>` : ''}${filtreHtml()}</div></div>
       ${ui.focus ? `<p><button class="btn ghost" data-act="av-retour">${ic('back',16)} Retour à la liste</button></p>` : `<div class="tiles">${tuiles}</div>`}
       ${nettoyer}${liste.map(carte).join('') || `<section class="card vide"><span class="vi">${ic('inbox',28)}</span><b>${vide}</b></section>`}`;
   }
@@ -118,7 +118,22 @@ export function createEcrans(c) {
       <div class="week">${jours}</div>
       <section class="card"><div class="row between"><h2>Temps forts</h2>${canEdit() ? '<button class="btn" data-act="ev-add">+ Ajouter un événement</button>' : ''}</div>
         <p class="eyebrow">Cette semaine</p><div class="evs">${evs.map(e => chipEv(e, true)).join('') || '<span class="muted small">Aucun temps fort cette semaine.</span>'}</div>
-        <p class="eyebrow">À préparer, 4 semaines suivantes</p>${suite.length ? `<ul class="up">${suite.map(e => { const n = Math.round((new Date(e.date + 'T12:00') - auj) / 864e5); return `<li><span class="mono">${esc(fmtCourt(new Date(e.date + 'T12:00')))}</span>${chipEv(e, false)}<span class="muted small">${n > 0 ? 'dans ' + n + ' j' : ''}${e.fin ? ' · jusqu\'au ' + esc(fmtCourt(new Date(e.fin + 'T12:00'))) : ''}</span></li>`; }).join('')}</ul>` : '<p class="muted small">Rien de prévu.</p>'}</section>`;
+        <p class="eyebrow">À préparer, 4 semaines suivantes</p>${suite.length ? `<ul class="up">${suite.map(e => { const n = Math.round((new Date(e.date + 'T12:00') - auj) / 864e5); return `<li><span class="mono">${esc(fmtCourt(new Date(e.date + 'T12:00')))}</span>${chipEv(e, false)}<span class="muted small">${n > 0 ? 'dans ' + n + ' j' : ''}${e.fin ? ' · jusqu\'au ' + esc(fmtCourt(new Date(e.fin + 'T12:00'))) : ''}</span></li>`; }).join('')}</ul>` : '<p class="muted small">Rien de prévu.</p>'}</section>${blocIdees()}`;
+  }
+  const TYPES_IDEE = { video: 'Vidéo', visuel: 'Visuel (carrousel + Stories)', les_deux: 'Visuel et vidéo' };
+  const idees = () => visibles().filter(p => p.statut === 'idee').sort(tri);
+  function blocIdees() {
+    const l = idees(), dflt = ui.filtre !== 'all' && soc(ui.filtre) ? ui.filtre : app.societes[0]?.id, d0 = iso(addDays(ui.semaine, 1));
+    const form = canEdit() ? `<form class="idee-form" onsubmit="return false"><div class="two"><label>Société<select id="id-biz">${app.societes.map(s => `<option value="${esc(s.id)}" ${s.id === dflt ? 'selected' : ''}>${esc(s.nom)}</option>`).join('')}</select></label>
+        <label>Date visée<input type="date" id="id-date" value="${esc(d0)}"></label></div>
+        <label>Type<select id="id-type">${Object.entries(TYPES_IDEE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+        <label>Idée (titre court)<input id="id-titre" placeholder="Ex. Store ou film : le bon choix pour une salle de réunion"></label>
+        <label>Détails (ce que tu veux voir, ton, plans, chiffres, photos à utiliser…)<textarea id="id-det" rows="3" placeholder="Tout ce qui m'aide à construire le visuel ou la vidéo"></textarea></label>
+        <div class="row"><button class="btn" data-act="idee-add">${ic('plus',16)} Ajouter l'idée</button></div></form>` : '';
+    const liste = l.length ? `<ul class="dos">${l.map(p => `<li><div><b>${esc(p.titre)}</b><div class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} · ${esc(TYPES_IDEE[p.type] || 'Visuel et vidéo')}</div>${p.consignes ? `<div class="small">${esc(p.consignes)}</div>` : ''}</div>${canEdit() ? `<button class="btn sm ghost danger" data-act="idee-del" data-id="${esc(p.id)}">${ic('trash',14)}</button>` : ''}</li>`).join('')}</ul>
+      <div class="row"><button class="btn" data-act="idee-copy">${ic('send',16)} Copier les idées pour Claude</button></div>
+      <p class="muted small">Colle ce message dans la conversation Claude de fabrication (reliée à ton PC) : Claude crée les textes, les visuels et les vidéos, et les posts arrivent dans « À valider ».</p>` : '<p class="muted small">Aucune idée en attente.</p>';
+    return `<section class="card"><h2>Idées de la semaine</h2><p class="muted small">Note ici ce que tu veux comme publications. Les visuels sont construits le lundi et le mardi, les vidéos le mercredi ou le jeudi.</p>${form}<h3>Idées en attente (${l.length})</h3>${liste}</section>`;
   }
   function renderEv() {
     const e = ui.ev; let m = $('#modal'); if (!e) { m?.remove(); return; }
@@ -255,6 +270,20 @@ Format et règles techniques : vidéo verticale 1080x1920, textes toujours en ba
     'pl-next': () => { ui.semaine = addDays(ui.semaine, 7); c.render(); },
     'pl-today': () => { ui.semaine = monday(new Date()); c.render(); },
     'pl-open': t => { ui.focus = t.dataset.id; ui.editing = null; c.go('avalider'); },
+    'idee-add': async () => {
+      const g = k => ($('#id-' + k)?.value || '').trim();
+      if (!g('titre') || !g('date')) return toast('Écris au moins le titre de l\'idée et la date visée');
+      const sc = soc(g('biz'));
+      await DB.saveDoc('posts', uid('idee'), { entrepriseId: g('biz'), titre: g('titre'), consignes: g('det'), type: g('type'), date: g('date'), heure: sc?.heure || '10:00', reseaux: sc?.reseaux || [], textes: {}, hashtags: '', script: '', source: 'idee-manuelle', statut: 'idee', majLe: new Date().toISOString() });
+      await S.refreshPending(); await c.refresh(); toast('Idée ajoutée'); S.sync().then(c.refresh);
+    },
+    'idee-del': async t => { if (!confirm('Supprimer cette idée ?')) return; await DB.removeDoc('posts', t.dataset.id); await S.refreshPending(); await c.refresh(); S.sync().then(c.refresh); },
+    'idee-copy': async () => {
+      const l = idees(); if (!l.length) return toast('Aucune idée à copier');
+      const parSoc = app.societes.map(sc => { const m = l.filter(p => p.entrepriseId === sc.id); return m.length ? `### ${sc.nom}\n` + m.map(p => `- ${p.date} · ${TYPES_IDEE[p.type] || 'Visuel et vidéo'} : ${p.titre}${p.consignes ? '\n  Détails : ' + p.consignes.replace(/\n/g, ' ') : ''}`).join('\n') : ''; }).filter(Boolean).join('\n\n');
+      await copy(`IDÉES DE LA SEMAINE (Pilote Réseaux)\nFabrique ces publications avec MES photos et vidéos sur MON PC (aucun dessin, aucun média inventé présenté comme réel). Rythme : visuels (carrousel + Stories) le lundi et le mardi, vidéos le mercredi ou le jeudi. Pour chacune : écris le texte par réseau et les hashtags, fabrique le média, range les fichiers au bon nom dans Documents\\QG Tfcom\\Reseaux\\<société> (et les vidéos dans P:\\Dossier pro\\<société>\\Vidéos prêtes à publier), enregistre la recette dans Reseaux\\recettes, puis donne-moi le fichier posts.json à importer (les posts doivent arriver en « À valider »). Lis d'abord Reseaux\\recettes\\README.md.\n\n${parSoc}\n\nRègles de chaque société : Solar-Bat = vouvoiement, noir et jaune, jamais de marque ni de ville précise ; 3CC = tutoiement, orange.`);
+      toast('Idées copiées : colle-les dans la conversation Claude de fabrication.', 7000);
+    },
     'ev-add': () => { ui.ev = { id: '', nom: '', date: iso(ui.semaine), fin: '', entrepriseId: ui.filtre, note: '' }; renderEv(); },
     'ev-edit': t => { const e = (app.events || []).find(x => x.id === t.dataset.id); if (!e) return; ui.ev = { fin: '', note: '', ...e }; renderEv(); },
     'ev-close': () => { ui.ev = null; renderEv(); },
@@ -307,7 +336,7 @@ Format et règles techniques : vidéo verticale 1080x1920, textes toujours en ba
     },
     'med-retirer': async t => { if (!confirm('Retirer le média de ce post ? Les fichiers ne sont pas supprimés.')) return; await savePost(t.dataset.id, { media: {} }); toast('Média retiré'); },
     'med-auto': async () => {
-      const cibles = visibles().filter(p => !aMedia(p) && p.statut !== 'publie'); let ok = 0, sans = 0, err = 0;
+      const cibles = visibles().filter(p => !aMedia(p) && !['publie', 'idee'].includes(p.statut)); let ok = 0, sans = 0, err = 0;
       toast('Recherche des médias…', 60000);
       for (const sc of app.societes.filter(x => cibles.some(p => p.entrepriseId === x.id))) {
         let r; try { r = await M.indexer(sc, { geste: true, force: true }); } catch { continue; }
