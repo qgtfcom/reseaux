@@ -88,7 +88,7 @@ POSTS À PRÉPARER :${corps}${briefs}`;
       : p.statut === 'pret' ? `<div class="actions"><button class="btn ghost" data-act="av-annuler" data-id="${id}">Annuler la validation</button><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>`
         : p.statut === 'publie' ? '' : p.statut === 'a_refaire' ? `<div class="actions"><button class="btn big ok" data-act="av-valider" data-id="${id}">${ic('check',18)} Valider</button><button class="btn ghost" data-act="av-annuler" data-id="${id}">Remettre dans « À valider »</button></div><div class="actions one"><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>` : `<div class="actions"><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>`;
     const bmedia = canEdit() && p.statut !== 'publie' ? `<div class="actions"><button class="btn ghost" data-act="med-open" data-id="${id}">${ic('clip',16)} ${aMedia(p) ? 'Changer le média' : 'Rattacher un média'}</button>${aMedia(p) ? `<button class="btn ghost danger" data-act="med-retirer" data-id="${id}">Retirer</button>` : ''}</div>` : '';
-    const bfich = aMedia(p) ? `<div class="actions"><button class="btn ghost" data-act="av-dl" data-id="${id}">${ic('download',16)} Télécharger les fichiers</button><button class="btn ghost" data-act="av-ouvrir" data-id="${id}">${ic('folder',16)} Ouvrir le fichier</button><button class="btn ghost" data-act="av-chemin" data-id="${id}">Copier le dossier</button></div>` : '';
+    const bfich = aMedia(p) ? `<div class="actions"><button class="btn ghost" data-act="av-dl" data-id="${id}">${ic('download',16)} Télécharger (version Facebook)</button><button class="btn ghost" data-act="av-ouvrir" data-id="${id}">${ic('folder',16)} Ouvrir le fichier</button><button class="btn ghost" data-act="av-chemin" data-id="${id}">Copier le dossier</button></div>` : '';
     const bcreer = canEdit() && !aMedia(p) && ['a_creer', 'a_valider', 'a_refaire'].includes(p.statut) ? `<div class="actions"><button class="btn big" data-act="av-creer" data-id="${id}">${ic('send',16)} Créer la vidéo à l'avance : copier la demande pour Claude</button></div>` : '';
     const passe = estPasse(p), sc = soc(p.entrepriseId);
     const bsuppr = canEdit() && p.statut !== 'publie' ? `<div class="actions one"><button class="btn ghost danger" data-act="av-suppr" data-id="${id}">${ic('trash',16)} Supprimer ce post${aMedia(p) ? ' et sa vidéo' : ''}</button></div>` : '';
@@ -338,9 +338,9 @@ Format et règles techniques : vidéo verticale 1080x1920, textes toujours en ba
       const u = [m.url, (m.slides || [])[0]].find(urlOk); if (u) window.open(u, '_blank', 'noopener');
     },
     'av-dl': async t => {
-      const p = P(t.dataset.id), s = soc(p.entrepriseId), noms = [...new Set((p.media?.fichiers || []).map(f => f.nom))]; let n = 0;
+      const p = P(t.dataset.id), s = soc(p.entrepriseId), noms = [...new Set(M.fichiersPour(p.media, 'facebook').map(f => f.nom))]; let n = 0;   // une seule version : celle de Facebook
       for (const nom of noms) { const u = await M.urlLocale(s, nom).catch(() => null); if (!u) continue; const a = document.createElement('a'); a.href = u; a.download = nom; document.body.appendChild(a); a.click(); a.remove(); n++; await new Promise(r => setTimeout(r, 300)); }
-      toast(n ? n + ' fichier(s) téléchargé(s) (dossier Téléchargements)' : 'Fichiers introuvables sur cet appareil : ouvre le logiciel sur le PC. Dossier : ' + (dossierDe(s) || 'voir Sociétés'), 6000);
+      toast(n ? (n > 1 ? n + ' fichiers téléchargés' : 'Fichier téléchargé') + ' (version Facebook, dossier Téléchargements)' : 'Fichiers introuvables sur cet appareil : ouvre le logiciel sur le PC. Dossier : ' + (dossierDe(s) || 'voir Sociétés'), 6000);
     },
     'av-ouvrir': async t => {
       const p = P(t.dataset.id), s = soc(p.entrepriseId), f = p.media?.fichiers || [], prem = f.find(x => x.type === 'video') || f.find(x => x.role !== 'story') || f[0];
