@@ -38,6 +38,27 @@ export function createEcrans(c) {
   /* ============================== À VALIDER ============================== */
   const aMedia = p => !!(p.media?.fichiers?.length);
   const dossierDe = s => (s?.dossiers || []).filter(d => d.role === 'enregistrement').map(d => d.indic).find(x => /^(Documents|[A-Z]:)/.test(x || '')) || (s?.dossiers || []).find(d => d.role === 'enregistrement')?.indic || '';
+  /** Demande de fabrication À L'AVANCE d'un ou plusieurs posts sans média (vidéo prévue plus tard dans la semaine). */
+  async function demandeCreation(posts) {
+    const parSoc = {}; posts.forEach(p => (parSoc[p.entrepriseId] = parSoc[p.entrepriseId] || []).push(p));
+    let corps = '', briefs = '';
+    for (const [sid, l] of Object.entries(parSoc)) {
+      const s = soc(sid);
+      corps += `\n=== ${s?.nom} ===\n` + l.map(p => `- « ${p.titre} » : à publier le ${p.date} à ${p.heure || '?'} sur ${(p.reseaux || []).join(', ')}\n  Type : ${p.type || p.media?.kind || 'vidéo'}\n  Consignes : ${p.consignes || p.visuel || '(aucune, déduis-les du titre et du texte)'}\n  Texte : ${(p.textes?.[netsDe(p)[0]] || p.textes?.facebook || '').slice(0, 500) || '(à écrire)'}\n  Script / idée : ${(p.script || '').slice(0, 500) || '(à proposer)'}`).join('\n');
+      briefs += '\n\n' + (await IA.brief(s, app.regles));
+    }
+    return `DEMANDE DE FABRICATION À L'AVANCE (Pilote Réseaux)
+
+Ces publications sont prévues PLUS TARD dans la semaine : on prépare leur vidéo / visuel MAINTENANT, avant le jour de publication. La date indiquée est la date de publication, pas une date limite proche.
+
+À LIRE D'ABORD : lis "Documents\\QG Tfcom\\Reseaux\\recettes\\README.md" (comment fabriquer et ranger un média, scripts réutilisables dans "recettes\\code"). Fabrique avec MES photos et vidéos sur MON PC (aucun dessin, aucun faux avant/après présenté comme un vrai chantier). S'il n'y a aucune photo ou vidéo réelle pour le thème, fais un média clairement graphique (texte + motion design). Si tu n'as pas accès à mon PC dans cette conversation, dis-le et arrête-toi.
+
+Pour chaque post : fabrique le média, range-le au bon nom dans le dossier d'enregistrement de la société, au format « Société - AAAA-MM-JJ - Titre du post - Réseau » (.mp4 vidéo, .jpg images), enregistre la recette dans Reseaux\\recettes, puis dis-moi quand c'est prêt. Le logiciel les retrouve avec « Rattacher automatiquement » et le post passe en « À valider ».
+
+Vidéo : verticale 1080x1920, textes lisibles en bas de l'écran (assez longtemps pour être lus), pas de visages de face, musique à volume bas avec fondu entrée/sortie, mp4 H.264 + AAC.
+
+POSTS À PRÉPARER :${corps}${briefs}`;
+  }
   const estPasse = p => p.statut !== 'publie' && p.statut !== 'idee' && !!p.date && p.date < iso(new Date());
   function mediaLocal(p) {
     const m = p.media, f = m.fichiers, kind = m.kind || 'image', s = f.filter(x => x.role === 'story'), sl = f.filter(x => x.role === 'slide'), vi = f.filter(x => x.type === 'video');
@@ -68,13 +89,14 @@ export function createEcrans(c) {
         : p.statut === 'publie' ? '' : p.statut === 'a_refaire' ? `<div class="actions"><button class="btn big ok" data-act="av-valider" data-id="${id}">${ic('check',18)} Valider</button><button class="btn ghost" data-act="av-annuler" data-id="${id}">Remettre dans « À valider »</button></div><div class="actions one"><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>` : `<div class="actions"><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>`;
     const bmedia = canEdit() && p.statut !== 'publie' ? `<div class="actions"><button class="btn ghost" data-act="med-open" data-id="${id}">${ic('clip',16)} ${aMedia(p) ? 'Changer le média' : 'Rattacher un média'}</button>${aMedia(p) ? `<button class="btn ghost danger" data-act="med-retirer" data-id="${id}">Retirer</button>` : ''}</div>` : '';
     const bfich = aMedia(p) ? `<div class="actions"><button class="btn ghost" data-act="av-dl" data-id="${id}">${ic('download',16)} Télécharger les fichiers</button><button class="btn ghost" data-act="av-ouvrir" data-id="${id}">${ic('folder',16)} Ouvrir le fichier</button><button class="btn ghost" data-act="av-chemin" data-id="${id}">Copier le dossier</button></div>` : '';
+    const bcreer = canEdit() && !aMedia(p) && ['a_creer', 'a_valider', 'a_refaire'].includes(p.statut) ? `<div class="actions"><button class="btn big" data-act="av-creer" data-id="${id}">${ic('send',16)} Créer la vidéo à l'avance : copier la demande pour Claude</button></div>` : '';
     const passe = estPasse(p), sc = soc(p.entrepriseId);
     const bsuppr = canEdit() && p.statut !== 'publie' ? `<div class="actions one"><button class="btn ghost danger" data-act="av-suppr" data-id="${id}">${ic('trash',16)} Supprimer ce post${aMedia(p) ? ' et sa vidéo' : ''}</button></div>` : '';
     return `<article class="review ${passe ? 'passe' : ''}" id="r-${id}" style="--sc:${esc(sc?.couleur || '#2f54eb')}"><div class="band"></div>${apercu(p)}
       <div class="sideact"><div class="meta">${pill(p)}${passe ? `<span class="pill late">${ic('clock',14)} Date passée</span>${canEdit() ? `<button class="btn sm ok" data-act="av-publie" data-id="${id}">${ic('check',14)} Déjà publié</button>` : ''}` : ''}<span class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</span>${reseaux(p)}</div>
       <h3>${esc(p.titre)}</h3>
       ${p.statut === 'a_refaire' && p.demande ? `<div class="why"><b>Ta demande :</b> ${esc(p.demande)}</div>` : ''}
-      ${boutons}${bfich}${bmedia}${bsuppr}
+      ${boutons}${bcreer}${bfich}${bmedia}${bsuppr}
       ${ed && canEdit() ? `<div class="editbox">
         <label>Texte ${esc(NETS[n]?.l)}<textarea id="cap-${id}" rows="6">${esc(p.textes?.[n] || '')}</textarea></label>
         <div class="two"><label>Date<input type="date" id="dt-${id}" value="${esc(p.date)}"></label><label>Heure<input type="time" id="hr-${id}" value="${esc(p.heure)}"></label></div>
@@ -87,14 +109,16 @@ export function createEcrans(c) {
   }
   function viewAvalider() {
     const base = visibles(), nb = s => base.filter(p => p.statut === s).length, nbPasse = base.filter(estPasse).length;
-    const tuiles = [['a_valider', 'circle-check', 'À valider', nb('a_valider'), 'blue'], ['a_refaire', 'redo', 'À refaire', nb('a_refaire'), 'red'], ['pret', 'thumb', 'Validés', nb('pret'), 'green'], ['passe', 'clock', 'Dates passées', nbPasse, 'orange'], ['tous', 'layers', 'Tous', base.filter(p => p.statut !== 'publie').length, 'grey']]
+    const tuiles = [['a_creer', 'box', 'En production', nb('a_creer'), 'orange'], ['a_valider', 'circle-check', 'À valider', nb('a_valider'), 'blue'], ['a_refaire', 'redo', 'À refaire', nb('a_refaire'), 'red'], ['pret', 'thumb', 'Validés', nb('pret'), 'green'], ['passe', 'clock', 'Dates passées', nbPasse, 'orange'], ['tous', 'layers', 'Tous', base.filter(p => p.statut !== 'publie').length, 'grey']]
       .map(([k, icn, l, n, c]) => `<button class="tile t-${c} ${ui.statut === k && !ui.focus ? 'on' : ''}" data-act="av-statut" data-s="${k}"><span class="ti">${ic(icn,20)}</span><span class="tn">${n}</span><span class="tl">${l}</span></button>`).join('');
     const liste = base.filter(p => ui.focus ? p.id === ui.focus : ui.statut === 'passe' ? estPasse(p) : (ui.statut === 'tous' ? p.statut !== 'publie' : p.statut === ui.statut)).sort(tri);
     const vide = { a_valider: 'Rien à valider pour le moment.', passe: 'Aucun post en retard.' }[ui.statut] || 'Aucun post dans cette liste.';
+    const sansMedia = liste.filter(p => !aMedia(p) && ['a_creer', 'a_valider', 'a_refaire'].includes(p.statut));
+    const lot = !ui.focus && ui.statut === 'a_creer' && sansMedia.length && canEdit() ? `<div class="banner">${ic('box',18)} ${sansMedia.length} post(s) sans vidéo ni visuel, prévus plus tard. <button class="btn sm" data-act="av-creer-tous">${ic('send',16)} Tout créer à l'avance : copier la demande pour Claude</button></div>` : '';
     const nettoyer = !ui.focus && ui.statut === 'passe' && liste.length && canEdit() ? `<div class="banner warn">${ic('clock',18)} ${liste.length} post(s) ont une date déjà passée sans être marqués comme publiés. <button class="btn sm ok" data-act="av-publie-tous">${ic('check',16)} Tout marquer comme publié</button> <button class="btn sm ghost danger" data-act="av-suppr-passes">${ic('trash',16)} Tout supprimer</button> <span class="muted small">(les fichiers restent dans tes dossiers)</span></div>` : '';
     return `<div class="row between"><h1>À valider</h1><div class="row">${canEdit() && FS.supported() && base.some(p => !aMedia(p) && !['publie', 'idee'].includes(p.statut)) ? `<button class="btn ghost" data-act="med-auto">${ic('clip',16)} Rattacher automatiquement les médias (${base.filter(p => !aMedia(p) && !['publie', 'idee'].includes(p.statut)).length})</button>` : ''}${filtreHtml()}</div></div>
       ${ui.focus ? `<p><button class="btn ghost" data-act="av-retour">${ic('back',16)} Retour à la liste</button></p>` : `<div class="tiles">${tuiles}</div>`}
-      ${nettoyer}${liste.map(carte).join('') || `<section class="card vide"><span class="vi">${ic('inbox',28)}</span><b>${vide}</b></section>`}`;
+      ${nettoyer}${lot}${liste.map(carte).join('') || `<section class="card vide"><span class="vi">${ic('inbox',28)}</span><b>${vide}</b></section>`}`;
   }
 
   /* ============================== PLANNING ============================== */
@@ -210,6 +234,11 @@ export function createEcrans(c) {
       const id = t.dataset.id, p = P(id), n = netOf(p);
       await savePost(id, { textes: { ...(p.textes || {}), [n]: $('#cap-' + id).value }, date: $('#dt-' + id).value || p.date, heure: $('#hr-' + id).value || p.heure });
       ui.editing = null; c.render(); toast('Modifications enregistrées');
+    },
+    'av-creer': async t => { const p = P(t.dataset.id); await copy(await demandeCreation([p])); toast('Demande copiée : colle-la dans la conversation Claude de fabrication (reliée à ton PC).', 7000); },
+    'av-creer-tous': async () => {
+      const l = visibles().filter(p => !aMedia(p) && ['a_creer', 'a_valider', 'a_refaire'].includes(p.statut)).sort(tri);
+      if (!l.length) return; await copy(await demandeCreation(l)); toast(l.length + ' post(s) dans la demande copiée : colle-la dans la conversation Claude de fabrication.', 7000);
     },
     'av-quick': t => { const ta = $('#dem-' + t.dataset.id); ta.value = (ta.value.trim() + ' ' + t.dataset.q + '.').trim(); },
     'av-fab': async t => {
