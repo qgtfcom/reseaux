@@ -37,6 +37,7 @@ export function createEcrans(c) {
 
   /* ============================== À VALIDER ============================== */
   const aMedia = p => !!(p.media?.fichiers?.length);
+  const dossierDe = s => (s?.dossiers || []).filter(d => d.role === 'enregistrement').map(d => d.indic).find(x => /^(Documents|[A-Z]:)/.test(x || '')) || (s?.dossiers || []).find(d => d.role === 'enregistrement')?.indic || '';
   const estPasse = p => p.statut !== 'publie' && p.statut !== 'idee' && !!p.date && p.date < iso(new Date());
   function mediaLocal(p) {
     const m = p.media, f = m.fichiers, kind = m.kind || 'image', s = f.filter(x => x.role === 'story'), sl = f.filter(x => x.role === 'slide'), vi = f.filter(x => x.type === 'video');
@@ -66,13 +67,14 @@ export function createEcrans(c) {
       : p.statut === 'pret' ? `<div class="actions"><button class="btn ghost" data-act="av-annuler" data-id="${id}">Annuler la validation</button><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>`
         : p.statut === 'publie' ? '' : p.statut === 'a_refaire' ? `<div class="actions"><button class="btn big ok" data-act="av-valider" data-id="${id}">${ic('check',18)} Valider</button><button class="btn ghost" data-act="av-annuler" data-id="${id}">Remettre dans « À valider »</button></div><div class="actions one"><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>` : `<div class="actions"><button class="btn ghost" data-act="av-edit" data-id="${id}">${ic('pencil',16)} Modifier / refaire</button></div>`;
     const bmedia = canEdit() && p.statut !== 'publie' ? `<div class="actions"><button class="btn ghost" data-act="med-open" data-id="${id}">${ic('clip',16)} ${aMedia(p) ? 'Changer le média' : 'Rattacher un média'}</button>${aMedia(p) ? `<button class="btn ghost danger" data-act="med-retirer" data-id="${id}">Retirer</button>` : ''}</div>` : '';
+    const bfich = aMedia(p) ? `<div class="actions"><button class="btn ghost" data-act="av-dl" data-id="${id}">${ic('download',16)} Télécharger les fichiers</button><button class="btn ghost" data-act="av-ouvrir" data-id="${id}">${ic('folder',16)} Ouvrir le fichier</button><button class="btn ghost" data-act="av-chemin" data-id="${id}">Copier le dossier</button></div>` : '';
     const passe = estPasse(p), sc = soc(p.entrepriseId);
     const bsuppr = canEdit() && p.statut !== 'publie' ? `<div class="actions one"><button class="btn ghost danger" data-act="av-suppr" data-id="${id}">${ic('trash',16)} Supprimer ce post${aMedia(p) ? ' et sa vidéo' : ''}</button></div>` : '';
     return `<article class="review ${passe ? 'passe' : ''}" id="r-${id}" style="--sc:${esc(sc?.couleur || '#2f54eb')}"><div class="band"></div>${apercu(p)}
       <div class="sideact"><div class="meta">${pill(p)}${passe ? `<span class="pill late">${ic('clock',14)} Date passée</span>${canEdit() ? `<button class="btn sm ok" data-act="av-publie" data-id="${id}">${ic('check',14)} Déjà publié</button>` : ''}` : ''}<span class="muted small">${esc(soc(p.entrepriseId)?.nom)} · ${esc(fmtJour(p.date))} à ${esc(p.heure || '?')}</span>${reseaux(p)}</div>
       <h3>${esc(p.titre)}</h3>
       ${p.statut === 'a_refaire' && p.demande ? `<div class="why"><b>Ta demande :</b> ${esc(p.demande)}</div>` : ''}
-      ${boutons}${bmedia}${bsuppr}
+      ${boutons}${bfich}${bmedia}${bsuppr}
       ${ed && canEdit() ? `<div class="editbox">
         <label>Texte ${esc(NETS[n]?.l)}<textarea id="cap-${id}" rows="6">${esc(p.textes?.[n] || '')}</textarea></label>
         <div class="two"><label>Date<input type="date" id="dt-${id}" value="${esc(p.date)}"></label><label>Heure<input type="time" id="hr-${id}" value="${esc(p.heure)}"></label></div>
@@ -305,6 +307,22 @@ Format et règles techniques : vidéo verticale 1080x1920, textes toujours en ba
         return toast(n ? n + ' fichier(s) téléchargé(s)' : 'Fichier introuvable sur cet appareil : ouvre le logiciel sur le PC (' + (liste[0]?.nom || 'média') + ')', 5000);
       }
       const u = [m.url, (m.slides || [])[0]].find(urlOk); if (u) window.open(u, '_blank', 'noopener');
+    },
+    'av-dl': async t => {
+      const p = P(t.dataset.id), s = soc(p.entrepriseId), noms = [...new Set((p.media?.fichiers || []).map(f => f.nom))]; let n = 0;
+      for (const nom of noms) { const u = await M.urlLocale(s, nom).catch(() => null); if (!u) continue; const a = document.createElement('a'); a.href = u; a.download = nom; document.body.appendChild(a); a.click(); a.remove(); n++; await new Promise(r => setTimeout(r, 300)); }
+      toast(n ? n + ' fichier(s) téléchargé(s) (dossier Téléchargements)' : 'Fichiers introuvables sur cet appareil : ouvre le logiciel sur le PC. Dossier : ' + (dossierDe(s) || 'voir Sociétés'), 6000);
+    },
+    'av-ouvrir': async t => {
+      const p = P(t.dataset.id), s = soc(p.entrepriseId), f = p.media?.fichiers || [], prem = f.find(x => x.type === 'video') || f.find(x => x.role !== 'story') || f[0];
+      const u = prem && await M.urlLocale(s, prem.nom).catch(() => null);
+      if (!u) return toast('Fichier introuvable sur cet appareil : ouvre le logiciel sur le PC. Dossier : ' + (dossierDe(s) || 'voir Sociétés'), 6000);
+      window.open(u, '_blank', 'noopener');
+    },
+    'av-chemin': async t => {
+      const p = P(t.dataset.id), s = soc(p.entrepriseId), noms = [...new Set((p.media?.fichiers || []).map(f => f.nom))];
+      await copy('Dossier : ' + (dossierDe(s) || '(non renseigné)') + '\n' + noms.join('\n'));
+      toast('Dossier et noms des fichiers copiés : colle-les dans la barre de l\'Explorateur Windows (dossier) ou dans la recherche', 6000);
     },
     'pub-fait': async t => {
       const p = P(t.dataset.id), faits = { ...(p.faits || {}), [t.dataset.n]: t.checked }, tous = netsDe(p).every(n => faits[n]);
